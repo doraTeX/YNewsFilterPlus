@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+coverage/
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+*.log
+private/

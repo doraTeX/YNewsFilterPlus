@@ -1,0 +1,52 @@
+import {Store} from './store';
+import {SETTINGS,HISTORY} from '../shared/sync';
+import {defaults} from '../shared/settings.js';
+const store=new Store();
+const AI_LOCAL='yne_plus_jev_local_v1';
+const keys=new Set([SETTINGS,HISTORY,AI_LOCAL,'yne_plus_jev_cache_v1','yne_plus_v1']);
+const ready=store.queue(()=>store.reconcile());
+function schedule(){void chrome.alarms.create('sync-retry',{delayInMinutes:0.5});}
+chrome.alarms.onAlarm.addListener(a=>{if(a.name==='sync-retry')void store.queue(()=>store.reconcile());});
+chrome.storage.onChanged.addListener((changes,area)=>{if(area==='sync'&&Object.keys(changes).some(k=>k.startsWith('ynfp:')))schedule();});
+chrome.runtime.onStartup.addListener(()=>{void store.queue(()=>store.reconcile());});
+chrome.runtime.onInstalled.addListener(()=>{void chrome.alarms.create('sync-periodic',{periodInMinutes:5});});
+chrome.alarms.onAlarm.addListener(a=>{if(a.name==='sync-periodic')void store.queue(()=>store.reconcile());});
+chrome.action.onClicked.addListener(tab=>{if(tab.id!==undefined)void chrome.tabs.sendMessage(tab.id,{type:'OPEN_SETTINGS'}).then(r=>{if(!r?.opened)return chrome.runtime.openOptionsPage();}).catch(()=>chrome.runtime.openOptionsPage());else void chrome.runtime.openOptionsPage();});
+function allowed(sender:chrome.runtime.MessageSender){
+ if(sender.id!==chrome.runtime.id||!sender.url)return false;
+ const u=new URL(sender.url);return u.origin===new URL(chrome.runtime.getURL('/')).origin||(u.protocol==='https:'&&(u.hostname==='yahoo.co.jp'||u.hostname.endsWith('.yahoo.co.jp')));
+}
+async function network(message:any){
+ const r=message.request,u=new URL(r.url);
+ const jev=u.href==='https://api.typesafe.ai/v1/systemone'&&r.method==='POST';
+ const article=u.origin==='https://news.yahoo.co.jp'&&r.method==='GET'&&/^\/(articles|pickup|expert\/articles)\/[^/]+\/?$/.test(u.pathname);
+ if(!jev&&!article)throw Error('許可されていない通信先です');
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),Math.min(r.timeout||30000,30000));
+ try{
+  const local=(await chrome.storage.local.get(AI_LOCAL))[AI_LOCAL];
+  if(jev&&!local?.key)throw Error('Jev APIキーが未登録です');
+  const response=await fetch(u.href,{method:r.method,credentials:'omit',redirect:'error',signal:controller.signal,
+   ...(jev?{headers:{Authorization:'Bearer '+local.key,'Content-Type':'application/json'},body:r.data}:{} )});
+  const responseText=await response.text();if(responseText.length>6_000_000)throw Error('応答が大きすぎます');
+  return {status:response.status,responseText,responseHeaders:Array.from(response.headers).map(([k,v])=>k+': '+v).join('\r\n'),finalUrl:response.url};
+ }finally{clearTimeout(timeout);}
+}
+async function handle(m:any){
+ await ready;
+ switch(m.type){
+ case 'GET':if(!keys.has(m.key))throw Error('保存キーが不正です');return (await chrome.storage.local.get(m.key))[m.key]??m.fallback;
+ case 'SET':if(!keys.has(m.key)||m.key===SETTINGS||m.key===HISTORY)throw Error('保存キーが不正です');await chrome.storage.local.set({[m.key]:m.value});return null;
+ case 'SAVE':await store.queue(async()=>{if(m.reason==='migration'&&JSON.stringify(m.value)===JSON.stringify(defaults)&&!(await chrome.storage.local.get(SETTINGS))[SETTINGS])return;await store.save(m.value,m.reason,m.expected);});schedule();return null;
+ case 'SYNC':await store.queue(()=>store.reconcile());return null;
+ case 'SYNC_STATUS':{const s=await store.queue(()=>store.state());return {enabled:s.enabled,message:s.message,conflicts:s.conflicts};}
+ case 'SYNC_ENABLED':if(typeof m.enabled!=='boolean')throw Error('同期設定が不正です');await store.queue(async()=>{await store.setEnabled(m.enabled);await store.reconcile();});return null;
+ case 'RESOLVE':await store.queue(()=>store.resolve(m.doc));return null;
+ case 'NETWORK':return network(m);
+ case 'REPORT':{if(typeof m.html!=='string'||m.html.length>5_000_000)throw Error('表が大きすぎます');const id=crypto.randomUUID();await chrome.storage.session.set({['report:'+id]:m.html});await chrome.tabs.create({url:chrome.runtime.getURL('src/report/index.html')+'?id='+id});return null;}
+ default:throw Error('未対応の操作です');
+ }
+}
+chrome.runtime.onMessage.addListener((message,sender,respond)=>{
+ if(!allowed(sender))return false;
+ void handle(message).then(value=>respond({ok:true,value}),e=>respond({ok:false,error:e?.name==='AbortError'?'timeout':e instanceof Error?e.message:'処理に失敗しました'}));return true;
+});
