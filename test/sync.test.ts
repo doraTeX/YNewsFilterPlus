@@ -24,3 +24,53 @@ describe('Chrome同期',()=>{
  it('APIキーとキャッシュを同期しない',async()=>{local.yne_plus_jev_local_v1={key:'PRIVATE'};local.yne_plus_jev_cache_v1={text:'PRIVATE'};const store=new Store();await store.save(settings('public-setting'),'edit');await store.reconcile();expect(JSON.stringify(remote)).not.toContain('PRIVATE');});
  it('破損したクラウドにローカルを書き戻さない',async()=>{const store=new Store();await store.save(settings('keep'),'edit');remote={'ynfp:b:meta':{count:1,hash:'invalid'}};await store.reconcile();expect(local[SETTINGS].rows).toEqual(['keep']);expect(Object.keys(remote)).toHaveLength(1);});
 });
+
+it('ハイライト色をChrome同期し、旧設定には黄色を補う',async()=>{
+ const {aiHighlightColor:_,...old}=defaults;
+ expect(validate(old).aiHighlightColor).toBe('#fff3bf');
+ expect(()=>validate({...defaults,aiHighlightColor:'red;display:none'})).toThrow();
+ const store=new Store();
+ await store.save(validate({...defaults,aiHighlightColor:'#D9F2F5'}),'edit');
+ await store.reconcile();
+ const docs=await decodeRemote(remote);
+ expect(docs[0].settings.aiHighlightColor).toBe('#d9f2f5');
+ local={};
+ const second=new Store();
+ await second.reconcile();
+ expect(local[SETTINGS].aiHighlightColor).toBe('#d9f2f5');
+});
+
+it('旧設定に新しい既定値を補った編集でも進捗表示を保存できる',async()=>{
+ const {aiHighlightColor:_,...old}=defaults;
+ local[SETTINGS]={...old,aiShowProgress:false};
+ const store=new Store();
+ const baseline=validate(local[SETTINGS]);
+ await store.save({...baseline,aiShowProgress:true},'editor-save',baseline);
+ expect(local[SETTINGS].aiShowProgress).toBe(true);
+});
+
+it('すべての設定項目が保存・同期・別端末復元で維持される',async()=>{
+ const changed=validate({version:1,rows:['一般語'],enabled:false,showPageChip:false,ignoreCase:false,normalization:'legacy',ignoreSeparators:true,legacyRate:true,aiConditions:['歴史'],aiInterests:['科学'],aiThreshold:.75,aiHighlightColor:'#ab12cd',aiEnabled:true,aiBodyEnabled:true,aiBodyLow:.2,aiDebug:true,aiShowProgress:false,aiConcurrency:8,aiRequestLimit:321});
+ expect(Object.keys(changed).sort()).toEqual(Object.keys(defaults).sort());
+ const store=new Store();await store.save(changed,'edit');await store.reconcile();
+ expect(local[SETTINGS]).toEqual(changed);
+ local={};await new Store().reconcile();expect(local[SETTINGS]).toEqual(changed);
+});
+it('旧形式のローカル同期履歴と同じクラウド設定を競合と誤認しない',async()=>{
+ const store=new Store();await store.save(settings('維持'),'edit');await store.reconcile();
+ delete local.ynfp_sync_state.doc.settings.aiHighlightColor;
+ await store.reconcile();expect((await store.state()).conflicts).toEqual([]);
+ expect(local[SETTINGS].rows).toEqual(['維持']);
+});
+it('同期通信の失敗後も保存した内容を保持して再送できる',async()=>{
+ const store=new Store();await store.save(settings('新しい設定'),'edit');
+ const send=vi.spyOn(chrome.storage.sync,'set').mockRejectedValueOnce(new Error('通信失敗'));
+ await store.reconcile();expect((await store.state()).pending).toBe(true);expect(local[SETTINGS].rows).toEqual(['新しい設定']);
+ send.mockRestore();await store.reconcile();expect((await store.state()).pending).toBe(false);
+ expect((await decodeRemote(remote))[0].settings.rows).toEqual(['新しい設定']);
+});
+it('直列化した複数タブ保存では古い編集が新しい値を消さない',async()=>{
+ const store=new Store();await store.save(settings('基準'),'edit');const baseline=local[SETTINGS];
+ const results=await Promise.allSettled([store.queue(()=>store.save(settings('先の編集'),'edit',baseline)),store.queue(()=>store.save(settings('後の古い編集'),'edit',baseline))]);
+ expect(results.map(r=>r.status)).toEqual(['fulfilled','rejected']);expect(local[SETTINGS].rows).toEqual(['先の編集']);
+});

@@ -1,6 +1,8 @@
 import {Store} from './store';
+import {updateToolbarBadge} from './badge';
 import {SETTINGS,HISTORY} from '../shared/sync';
 import {defaults} from '../shared/settings.js';
+import {YAHOO_HOSTS} from '../shared/hosts';
 const store=new Store();
 const AI_LOCAL='yne_plus_jev_local_v1';
 const keys=new Set([SETTINGS,HISTORY,AI_LOCAL,'yne_plus_jev_cache_v1','yne_plus_v1']);
@@ -14,7 +16,7 @@ chrome.alarms.onAlarm.addListener(a=>{if(a.name==='sync-periodic')void store.que
 chrome.action.onClicked.addListener(tab=>{if(tab.id!==undefined)void chrome.tabs.sendMessage(tab.id,{type:'OPEN_SETTINGS'}).then(r=>{if(!r?.opened)return chrome.runtime.openOptionsPage();}).catch(()=>chrome.runtime.openOptionsPage());else void chrome.runtime.openOptionsPage();});
 function allowed(sender:chrome.runtime.MessageSender){
  if(sender.id!==chrome.runtime.id||!sender.url)return false;
- const u=new URL(sender.url);return u.origin===new URL(chrome.runtime.getURL('/')).origin||(u.protocol==='https:'&&(u.hostname==='yahoo.co.jp'||u.hostname.endsWith('.yahoo.co.jp')));
+ const u=new URL(sender.url);return u.origin===new URL(chrome.runtime.getURL('/')).origin||(u.protocol==='https:'&&YAHOO_HOSTS.includes(u.hostname));
 }
 async function network(message:any){
  const r=message.request,u=new URL(r.url);
@@ -31,7 +33,8 @@ async function network(message:any){
   return {status:response.status,responseText,responseHeaders:Array.from(response.headers).map(([k,v])=>k+': '+v).join('\r\n'),finalUrl:response.url};
  }finally{clearTimeout(timeout);}
 }
-async function handle(m:any){
+async function handle(m:any,sender:chrome.runtime.MessageSender){
+ if(m.type==='BADGE')return updateToolbarBadge(m.count,sender,m.error);
  await ready;
  switch(m.type){
  case 'GET':if(!keys.has(m.key))throw Error('保存キーが不正です');return (await chrome.storage.local.get(m.key))[m.key]??m.fallback;
@@ -48,5 +51,7 @@ async function handle(m:any){
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
  if(!allowed(sender))return false;
- void handle(message).then(value=>respond({ok:true,value}),e=>respond({ok:false,error:e?.name==='AbortError'?'timeout':e instanceof Error?e.message:'処理に失敗しました'}));return true;
+ void handle(message,sender).then(value=>respond({ok:true,value}),e=>respond({ok:false,error:e?.name==='AbortError'?'timeout':e instanceof Error?e.message:'処理に失敗しました'}));return true;
 });
+
+chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='loading'){void chrome.action.setBadgeText({tabId,text:''}).catch(()=>{});void chrome.action.setTitle({tabId,title:'Y!News Filter Plus'}).catch(()=>{});}});

@@ -5,12 +5,18 @@ type State={device:string;enabled:boolean;doc:Doc|null;pending:boolean;conflicts
 export class Store{
  private chain=Promise.resolve();
  queue<T>(fn:()=>Promise<T>):Promise<T>{const result=this.chain.then(fn,fn);this.chain=result.then(()=>{},()=>{});return result;}
- async state():Promise<State>{return (await chrome.storage.local.get(STATE))[STATE]??{device:crypto.randomUUID(),enabled:true,doc:null,pending:false,conflicts:[],message:'Chrome同期の確認待ち'};}
+ async state():Promise<State>{
+  const s:State=(await chrome.storage.local.get(STATE))[STATE]??{device:crypto.randomUUID(),enabled:true,doc:null,pending:false,conflicts:[],message:'Chrome同期の確認待ち'};
+  // ローカルの同期履歴にも、新しい設定項目の既定値を補う。
+  if(s.doc)s.doc=parseDoc(JSON.stringify(s.doc));
+  s.conflicts=s.conflicts.map(d=>parseDoc(JSON.stringify(d)));
+  return s;
+ }
  async remember(s:State){await chrome.storage.local.set({[STATE]:s});}
  async history(next:Settings,reason:string){const data=await chrome.storage.local.get([SETTINGS,HISTORY]);const old=data[SETTINGS];if(old&&JSON.stringify(old)!==JSON.stringify(next))await chrome.storage.local.set({[HISTORY]:[{time:Date.now(),reason,settings:old},...(data[HISTORY]||[])].slice(0,10)});}
  async save(value:unknown,reason:string,expected?:unknown){
   const settings=validate(value),current=(await chrome.storage.local.get(SETTINGS))[SETTINGS];
-  if(expected!==undefined&&JSON.stringify(current??defaults)!==JSON.stringify(expected))throw Error('別の画面で設定が更新されました。設定を開き直してください');
+  if(expected!==undefined&&JSON.stringify(validate(current??defaults))!==JSON.stringify(validate(expected)))throw Error('別の画面で設定が更新されました。設定を開き直してください');
   if(JSON.stringify(current)===JSON.stringify(settings))return;
   const s=await this.state();await this.history(settings,reason);
   // 競合している他端末の版は、明示解決までは時計に取り込まない。

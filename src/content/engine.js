@@ -5,19 +5,21 @@ const LEGACY_KEY='yne_plus_v1',KEY='yne_plus_settings_v2',SETTINGS_HISTORY='yne_
 function headersOf(raw){const out={};for(const line of (raw||'').split(/\r?\n/)){const i=line.indexOf(':');if(i>0)out[line.slice(0,i).toLowerCase()]=line.slice(i+1).trim();}return out;}
 async function exclusive(action){return navigator.locks?.request?navigator.locks.request('ynfp-settings',action):action();}
 async function persistSettings(value,reason,expected){await bridge.saveSettings(validate(value),reason,expected);}
-async function syncNow(){await bridge.sync().catch(console.warn);}
+const connected=()=>bridge.isConnected?.()!==false;
+async function syncNow(){if(!connected())return;await bridge.sync().catch(e=>{if(connected())console.warn(e);});}
 function addSyncUI({body,text,button,status}){
  const section=text('details','',body);section.dataset.noAutosave='true';text('summary','複数端末間のChrome同期',section);
  const notice=text('p','確認中…',section,'notice');
  text('p','同じGoogleアカウントでChromeの同期を有効にしてください。APIキー・キャッシュは同期しません。',section,'hint');
  const label=text('label','',section),toggle=document.createElement('input');toggle.type='checkbox';label.append(toggle,document.createTextNode('Chrome同期を有効にする'));
+ const actions=text('div','',section,'buttons');
+ actions.style.gap='14px';
  const list=text('div','',section);
  async function refresh(){const s=await bridge.syncStatus();toggle.checked=s.enabled;notice.textContent=s.message;list.replaceChildren();
   for(const [i,doc] of (s.conflicts||[]).entries()){text('h3','競合した設定 '+(i+1),list);const pre=text('pre',JSON.stringify(doc.settings,null,2),list);pre.style.cssText='max-height:160px;overflow:auto;white-space:pre-wrap';button('この設定を採用',async()=>{await bridge.resolve(doc);await reloadSettings();await refresh();},list);}
  }
  toggle.onchange=async()=>{try{await bridge.setSyncEnabled(toggle.checked);await refresh();}catch(e){status.textContent=e.message;}};
- button('同期を確認',async()=>{await syncNow();await refresh();},section);
- button('保存履歴から復元',async()=>{const history=await GM.getValue(SETTINGS_HISTORY,[]);list.replaceChildren();if(!history.length)text('p','保存履歴はありません。',list);for(const h of history){const d=text('details','',list);text('summary',new Date(h.time).toLocaleString(),d);text('pre',JSON.stringify(h.settings,null,2),d);button('この履歴を復元',async()=>{if(!confirm('現在の設定をこの履歴で置き換えますか？'))return;await bridge.saveSettings(h.settings,'restore');await reloadSettings();panel.close();editor();},d);}},section);
+ button('同期を確認',async()=>{await syncNow();await refresh();},actions);
  void refresh();
 }
 // Optional Jev integration. Credentials and decisions stay in local GM storage.
@@ -53,7 +55,7 @@ function renderAIStats(){if(!aiStatsElement?.isConnected)return;
 function aiActive(local=aiLocal){return config.aiEnabled&&!local.stopped;}
 function allAIConditions(){return [...config.aiConditions,...config.aiInterests];}
 function isExclusionIndex(i){return i<config.aiConditions.length;}
-function aiIdleReason(){return !config.enabled?'記事の除外がOFFです。':paused?'一時的に全件表示中です。':!aiLocal.key?'Jev APIキーが未登録です。設定画面で入力してください。':!aiActive()?'このブラウザでJevがOFFです。':!allAIConditions().length?'Jevの条件が空です。設定画面で条件を入力してください。':'';}
+function aiIdleReason(){return !config.enabled?'記事の除外がOFFです。':paused?'一時的に全件表示中です。':!aiLocal.key?'有効なJev API Keyが入力されるまで、意味によるハイライト・除外は機能しません。':!aiActive()?'このブラウザでJevがOFFです。':!allAIConditions().length?'Jevの条件が空です。設定画面で条件を入力してください。':'';}
 function inspectAITargets(){
  const els=candidates();aiStats.target=els.length;aiStats.keyword=0;aiStats.jevHidden=0;aiStats.jevHighlighted=0;aiStats.cached=0;aiStats.pending=0;aiStats.prior=0;aiStats.fresh=0;const prior=new Set(),fresh=new Set();
  for(const el of els){if(keywordHidden.has(el)){aiStats.keyword++;continue;}if(el.hasAttribute(MARK))aiStats.jevHidden++;if(el.hasAttribute(HIGHLIGHT))aiStats.jevHighlighted++;const item=aiIdentity(el);if(!item)continue;const key=aiKey(item,allAIConditions());
@@ -136,8 +138,8 @@ function decisionReportHTML(rows){
  const filters=[['keyword-excluded-row','キーワード除外','#e2e3ef'],['excluded-row','除外','#fff0f3'],['body-negative-row','本文で非除外','#edf8ef'],['highlight-row','ハイライト','#fff3bf'],['highlight-negative-row','本文で非ハイライト','#eadcf8'],['pending-row','未取得','#d9f2f5'],['error-row','エラー','#ffdfbd'],['other-row','通常表示','#e9eff5']];
  const controls=filters.map(([kind,label,color])=>`<label class="tag filter-label" style="background:${color}"><input type="checkbox" data-filter="${kind}" checked> ${label} (${filterCounts.get(kind)||0})</label>`).join(' ');
  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jev判定詳細 — Y!News Filter Plus</title><style>
- [hidden]{display:none!important}.filter-actions{flex-basis:100%;display:flex;gap:10px;margin-bottom:4px}.filter-actions button{font:600 14px/1.4 system-ui;padding:7px 12px;border:1px solid #98abc0;border-radius:7px;background:white;color:#203c59;cursor:pointer}.filter-actions button:hover{background:#e5edf7}.filter-actions button:focus-visible{outline:2px solid #1768bd;outline-offset:2px}.filters{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:8px}.filters legend{font-weight:600;margin-bottom:8px}.filter-label{cursor:pointer}.filter-label input{accent-color:#1768bd;vertical-align:middle}.filter-label:focus-within{outline:2px solid #1768bd;outline-offset:2px} *{box-sizing:border-box}body{margin:0;padding:24px;font:14px/1.6 system-ui,sans-serif;color:#172b42;background:#f5f8fc}h1{font-size:24px;margin:0 0 8px}p{color:#52657a}a{color:#1768bd;text-decoration:none}a:hover{text-decoration:underline}.table-wrap{overflow:auto;max-height:80vh;border:1px solid #cbd8e6;border-radius:10px;background:white}table{border-collapse:separate;border-spacing:0;width:100%;min-width:1350px}th,td{padding:12px;border-bottom:1px solid #dbe3ec;text-align:left;vertical-align:top}th{position:sticky;top:0;background:#e7eff8;z-index:1;white-space:nowrap}td{font-variant-numeric:tabular-nums}tbody tr:nth-child(even){background:#f6f9fc}tbody tr:hover{background:#edf5fd}.article{min-width:260px;max-width:420px;overflow-wrap:anywhere}.detail{min-width:260px;max-width:440px}.tag{display:inline-block;white-space:nowrap;padding:2px 8px;background:#e9eff5;border-radius:5px}tbody tr.keyword-excluded-row{background:#e2e3ef}tbody tr.keyword-excluded-row:hover{background:#d1d3e6}tbody tr.keyword-excluded-row td:first-child{border-left:4px solid #555c91}.keyword-excluded{background:#d1d3e6;color:#353c70}tbody tr.pending-row{background:#d9f2f5}tbody tr.pending-row:hover{background:#c1e7ec}tbody tr.pending-row td:first-child{border-left:4px solid #167d91}tbody tr.error-row{background:#ffdfbd}tbody tr.error-row:hover{background:#ffce9b}tbody tr.error-row td:first-child{border-left:4px solid #ad5100}tbody tr.excluded-row{background:#fff0f3}tbody tr.excluded-row:hover{background:#ffe1e8}tbody tr.excluded-row td:first-child{border-left:4px solid #c62828}tbody tr.body-negative-row{background:#edf8ef}tbody tr.body-negative-row:hover{background:#dceddf}tbody tr.body-negative-row td:first-child{border-left:4px solid #2e7d32}tbody tr.highlight-row{background:#fff3bf}tbody tr.highlight-row:hover{background:#ffe99a}tbody tr.highlight-row td:first-child{border-left:4px solid #c18b00}tbody tr.highlight-negative-row{background:#eadcf8}tbody tr.highlight-negative-row:hover{background:#ddc6f2}tbody tr.highlight-negative-row td:first-child{border-left:4px solid #7b3fa0}.decisive-score{color:#c62828;font-weight:700}.excluded{background:#fce7f0;color:#8a2854}summary{cursor:pointer;color:#1768bd}dl{display:grid;grid-template-columns:1fr 1fr;gap:6px}dd{margin:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:350px;overflow:auto;background:#fff;padding:10px;border:1px solid #dbe3ec}h3{font-size:14px}@media print{.table-wrap{max-height:none;overflow:visible}th{position:static}}
- </style></head><body><h1>Jev判定詳細</h1><p>${escape(new Date().toLocaleString())} 時点 · ${rows.length} 行<br>元ページ：<a href="${escape(location.href)}" target="_blank" rel="noopener noreferrer">${escape(location.href)}</a><br>Jev判定は記事カードと条件ごとに1行、通常キーワードで除外した記事カードは1行だけ表示します。番号はConsoleと同じ0始まりです。開いた時点の判定結果を表示しています。</p><fieldset class="filters"><legend>表示する判定</legend><div class="filter-actions"><button type="button" data-filter-all="true">すべて選択</button><button type="button" data-filter-all="false">すべて選択解除</button></div>${controls}</fieldset><p id="filter-count" role="status">${rows.length} / ${rows.length} 行を表示</p><p id="filter-empty" hidden>選択した判定に該当する行はありません。</p>${rows.length?`<div class="table-wrap"><table><thead><tr>${['番号','記事','条件','見出しNoul','本文Noul','しきい値','採用','条件判定','記事表示','詳細'].map(k=>`<th scope="col">${k}</th>`).join('')}</tr></thead><tbody>${content}</tbody></table></div>`:'<p>判定対象の記事または条件がありません。</p>'}</body></html>`;
+ .filter-guide{grid-template-columns:max-content 1fr;gap:8px 16px;margin:16px 0 24px;color:#52657a}.filter-guide dt{font-weight:600}.filter-guide dd{align-self:center} [hidden]{display:none!important}.filter-actions{flex-basis:100%;display:flex;gap:10px;margin-bottom:4px}.filter-actions button{font:600 14px/1.4 system-ui;padding:7px 12px;border:1px solid #98abc0;border-radius:7px;background:white;color:#203c59;cursor:pointer}.filter-actions button:hover{background:#e5edf7}.filter-actions button:focus-visible{outline:2px solid #1768bd;outline-offset:2px}.filters{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:8px}.filters legend{font-weight:600;margin-bottom:8px}.filter-label{cursor:pointer}.filter-label input{accent-color:#1768bd;vertical-align:middle}.filter-label:focus-within{outline:2px solid #1768bd;outline-offset:2px} *{box-sizing:border-box}body{margin:0;padding:24px;font:14px/1.6 system-ui,sans-serif;color:#172b42;background:#f5f8fc}h1{font-size:24px;margin:0 0 8px}p{color:#52657a}a{color:#1768bd;text-decoration:none}a:hover{text-decoration:underline}.table-wrap{overflow:auto;max-height:80vh;border:1px solid #cbd8e6;border-radius:10px;background:white}table{border-collapse:separate;border-spacing:0;width:100%;min-width:1350px}th,td{padding:12px;border-bottom:1px solid #dbe3ec;text-align:left;vertical-align:top}th{position:sticky;top:0;background:#e7eff8;z-index:1;white-space:nowrap}td{font-variant-numeric:tabular-nums}tbody tr:nth-child(even){background:#f6f9fc}tbody tr:hover{background:#edf5fd}.article{min-width:260px;max-width:420px;overflow-wrap:anywhere}.detail{min-width:260px;max-width:440px}.tag{display:inline-block;white-space:nowrap;padding:2px 8px;background:#e9eff5;border-radius:5px}tbody tr.keyword-excluded-row{background:#e2e3ef}tbody tr.keyword-excluded-row:hover{background:#d1d3e6}tbody tr.keyword-excluded-row td:first-child{border-left:4px solid #555c91}.keyword-excluded{background:#d1d3e6;color:#353c70}tbody tr.pending-row{background:#d9f2f5}tbody tr.pending-row:hover{background:#c1e7ec}tbody tr.pending-row td:first-child{border-left:4px solid #167d91}tbody tr.error-row{background:#ffdfbd}tbody tr.error-row:hover{background:#ffce9b}tbody tr.error-row td:first-child{border-left:4px solid #ad5100}tbody tr.excluded-row{background:#fff0f3}tbody tr.excluded-row:hover{background:#ffe1e8}tbody tr.excluded-row td:first-child{border-left:4px solid #c62828}tbody tr.body-negative-row{background:#edf8ef}tbody tr.body-negative-row:hover{background:#dceddf}tbody tr.body-negative-row td:first-child{border-left:4px solid #2e7d32}tbody tr.highlight-row{background:#fff3bf}tbody tr.highlight-row:hover{background:#ffe99a}tbody tr.highlight-row td:first-child{border-left:4px solid #c18b00}tbody tr.highlight-negative-row{background:#eadcf8}tbody tr.highlight-negative-row:hover{background:#ddc6f2}tbody tr.highlight-negative-row td:first-child{border-left:4px solid #7b3fa0}.decisive-score{color:#c62828;font-weight:700}.excluded{background:#fce7f0;color:#8a2854}summary{cursor:pointer;color:#1768bd}dl{display:grid;grid-template-columns:1fr 1fr;gap:6px}dd{margin:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:350px;overflow:auto;background:#fff;padding:10px;border:1px solid #dbe3ec}h3{font-size:14px}@media print{.table-wrap{max-height:none;overflow:visible}th{position:static}}
+ </style></head><body><h1>Jev判定詳細</h1><p>${escape(new Date().toLocaleString())} 時点 · ${rows.length} 行<br>元ページ：<a href="${escape(location.href)}" target="_blank" rel="noopener noreferrer">${escape(location.href)}</a></p><fieldset class="filters"><legend>表示する判定</legend><div class="filter-actions"><button type="button" data-filter-all="true">すべて選択</button><button type="button" data-filter-all="false">すべて選択解除</button></div>${controls}</fieldset><dl class="filter-guide"><dt>キーワード除外</dt><dd>通常の除外キーワードに該当したため機械的に除外された記事</dd><dt>除外</dt><dd>Jevによる見出しまたは本文判定の結果、除外対象となった記事</dd><dt>本文で非除外</dt><dd>見出しでは除外候補となったが、本文を読んで除外とはしなかった記事</dd><dt>ハイライト</dt><dd>Jevによる見出しまたは本文判定の結果、ハイライト対象となった記事</dd><dt>本文で非ハイライト</dt><dd>見出しではハイライト候補となったが、本文を読んでハイライトしなかった記事</dd><dt>未取得</dt><dd>判定結果をまだ取得していない記事。未送信・順番待ち・通信中のほか、問い合わせ上限到達、Jev無効、APIキー未登録、先行する通信のエラーによる停止・再試行待ちを含みます</dd><dt>エラー</dt><dd>この記事のJev判定処理、本文取得、または保存・読み込み処理でエラーが記録された記事。原因は「本文・判定の詳細」で確認できます</dd><dt>通常表示</dt><dd>除外やハイライトの対象とならず通常表示された記事</dd></dl><p id="filter-count" role="status">${rows.length} / ${rows.length} 行を表示</p><p id="filter-empty" hidden>選択した判定に該当する行はありません。</p>${rows.length?`<div class="table-wrap"><table><thead><tr>${['番号','記事','条件','見出しNoul','本文Noul','しきい値','採用','条件判定','記事表示','詳細'].map(k=>`<th scope="col">${k}</th>`).join('')}</tr></thead><tbody>${content}</tbody></table></div>`:'<p>判定対象の記事または条件がありません。</p>'}</body></html>`;
 }
 function decisionTSV(rows){
  const columns=['番号','記事','URL','条件','判定用途','見出しNoul','本文Noul','しきい値','採用','取得元','条件判定','記事表示','キーワード除外','一時解除','追加判定下限','追加判定上限','本文取得失敗','Jev有効','判定状況の詳細','最終処理時刻','処理ログ','本文判定に送信したテキスト'];
@@ -301,6 +303,7 @@ async function saveAIResult(key,value,epoch){
   });
 }
 async function runAI(){
+ if(!connected())return;
   if(aiRunning)return;
   inspectAITargets();
   const idle=aiIdleReason();if(idle){aiStatus(idle+(aiStats.lastError?' 最後のエラーは使用量欄を確認してください。':''));return;}
@@ -340,6 +343,7 @@ async function runAI(){
         if(keywordHidden.has(el)||!aiActive(local)||!local.key||epoch!==aiEpoch||page!==location.href||JSON.stringify(allAIConditions())!==JSON.stringify(conditions))return;
         aiLocal=local;
         if(Date.now()<(local.blockedUntil||0)){aiStatus('Jevは通信エラー後の待機中です。'+new Date(local.blockedUntil).toLocaleTimeString()+'以降に再確認します。');return;}
+        const previousErrorAt=local.lastErrorAt;
         const cache={...aiCache};
         if(validDecision(cache[cacheKey],conditions.length)&&(!wantsBody(cache[cacheKey],conditions.length,local)||bodyFinished(cache,cacheKey,conditions.length)))return;
         try{
@@ -368,6 +372,13 @@ async function runAI(){
           }
           if(epoch!==aiEpoch||page!==location.href)return;
           if(cache[bodyCacheKey(cacheKey)])await saveAIResult(bodyCacheKey(cacheKey),cache[bodyCacheKey(cacheKey)],epoch);
+          // 失敗後に開始した再試行の成功だけで通知を解除する。同時実行中の古い成功は除外する。
+          if(local.failures&&!local.stopped)await aiLock(async()=>{
+            const latest=await GM.getValue(AI_LOCAL,{});
+            if(latest.key===local.key&&!latest.stopped&&latest.lastErrorAt===previousErrorAt){
+              aiLocal={...latest,failures:0,blockedUntil:0};await GM.setValue(AI_LOCAL,aiLocal);
+            }
+          });
           aiStatus(`Jev判定済み：キャッシュ ${Object.keys(aiCache).length} 件／このページの通信 ${aiRequests} 回`);
         }catch(e){
           traceAI(cacheKey,e.limit?'上限到達':'エラー',e.message||String(e));
@@ -401,10 +412,16 @@ function addAIUI({body,text,button,status,applySettings}){
   text('p','条件を1行に1つ入力してください。',section,'hint');
   text('h3','興味のあるキーワード',section);
   const interests=text('textarea','',section);interests.setAttribute('aria-label','興味のあるキーワード');interests.value=config.aiInterests.join('\n');interests.style.cssText='height:100px;min-height:100px';
+  const colorRow=text('label','記事のハイライト色',section);colorRow.style.cssText='display:flex;align-items:center;gap:12px;margin:12px 0';
+  const highlightColor=text('input','',colorRow);highlightColor.type='color';highlightColor.value=config.aiHighlightColor;highlightColor.setAttribute('aria-label','記事のハイライト色');highlightColor.style.cssText='width:56px;height:34px;padding:2px;cursor:pointer';
+  const previewColor=()=>{highlightPreview=highlightColor.value;updateHighlightStyle();};
+  highlightColor.addEventListener('input',previewColor);highlightColor.addEventListener('change',previewColor);
+  button('デフォルトに戻す',()=>{highlightColor.value=defaults.aiHighlightColor;highlightColor.dispatchEvent(new Event('change',{bubbles:true}));},colorRow);
   text('h3','興味のないキーワード',section);
   const conditions=text('textarea','',section);conditions.setAttribute('aria-label','AI除外条件');conditions.value=config.aiConditions.join('\n');conditions.style.height='100px';conditions.style.minHeight='100px';
-  text('p','関連すると判断する値（0.5〜1。初期値0.9）',section,'hint');
-  const threshold=text('input','',section);threshold.type='number';threshold.min='0.5';threshold.max='1';threshold.step='0.01';threshold.value=String(config.aiThreshold);threshold.setAttribute('aria-label','AI除外の判定値');
+  const thresholdRow=text('label','',section);thresholdRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0;flex-wrap:wrap';
+  const thresholdHint=text('span','関連すると判断する値（0.5〜1。初期値0.8）',thresholdRow,'hint');thresholdHint.style.margin='0';
+  const threshold=text('input','',thresholdRow);threshold.style.cssText='width:80px;flex:0 0 80px;margin:0';threshold.type='number';threshold.min='0.5';threshold.max='1';threshold.step='0.01';threshold.value=String(config.aiThreshold);threshold.setAttribute('aria-label','AI除外の判定値');
   const progressLabel=text('label','',section),showProgress=document.createElement('input');showProgress.type='checkbox';showProgress.checked=config.aiShowProgress;showProgress.setAttribute('aria-label','Jevの進捗ツールチップを表示する');progressLabel.append(showProgress,document.createTextNode('Jevの進捗ツールチップを表示する'));
   const label=text('label','',summary);label.className='jev-toggle';const enabled=document.createElement('input');enabled.type='checkbox';enabled.checked=config.aiEnabled;label.append(enabled,document.createTextNode('Jevを有効にする'));enabled.setAttribute('aria-label','Jevを有効にする');
   label.addEventListener('click',e=>e.stopPropagation());label.addEventListener('keydown',e=>e.stopPropagation());
@@ -430,7 +447,8 @@ function addAIUI({body,text,button,status,applySettings}){
   threshold.addEventListener('input',()=>refreshRange(threshold));
   low.addEventListener('input',()=>refreshRange(low));high.addEventListener('input',()=>refreshRange(high));bodyEnabled.addEventListener('change',()=>refreshRange());refreshRange();
   text('p','見出し判定値がこの範囲に入った条件だけ、見出しと本文冒頭（最大2,000文字）で追加判定します。',section,'hint');
-  const key=text('input','',section);key.type='password';key.autocomplete='off';key.placeholder=aiLocal.key?'APIキー登録済み（変更時だけ入力）':'TypeSafeのJev APIキー';key.setAttribute('aria-label','Jev APIキー');
+  const keyRow=text('div','',section);keyRow.style.cssText='display:flex;align-items:center;gap:16px';
+  const key=text('input','',keyRow);key.style.cssText='flex:1;min-width:0';apiKeyInput=key;key.type='password';key.autocomplete='off';key.placeholder=aiLocal.key?'APIキー登録済み（変更時だけ入力）':'TypeSafeのJev APIキー';key.setAttribute('aria-label','Jev APIキー');
   text('p','キャッシュは7日間、最大2,000件（容量上限も適用）。同時問い合わせ数は下の設定で変更できます。同じYahooドメインのタブ間では重複判定を抑制します。モデル：'+AI_MODEL,section,'hint');
   aiStatusElement=text('p',aiMessage,section,'notice');aiStatusElement.setAttribute('role','status');
   const usageHeading=text('h3','このページのJev使用量',section);usageHeading.style.cssText='font-size:17px;font-weight:700;margin:24px 0 10px;color:#142b45';
@@ -459,14 +477,15 @@ function addAIUI({body,text,button,status,applySettings}){
   const operational=text('fieldset','',container);operational.className='jev-controls';
   const runActions=text('div','',operational,'buttons');
   button('直ちに再判定',async()=>{await applySettings();await runAI();},runActions);
-  const maintenanceActions=text('div','',operational,'buttons');maintenanceActions.style.cssText='gap:16px;margin-top:20px';
-  button('判定キャッシュを消去',async()=>{await aiLock(async()=>{aiEpoch++;aiCache={};await GM.setValue(AI_CACHE,{});});aiStatus('キャッシュを消去しました。次の確認時に再判定します。');},maintenanceActions);
+  runActions.style.gap='16px';
+  const clearCache=button('判定キャッシュを消去',async()=>{await aiLock(async()=>{aiEpoch++;aiCache={};await GM.setValue(AI_CACHE,{});});aiStatus('キャッシュを消去しました。次の確認時に再判定します。');},runActions);clearCache.style.marginLeft='auto';
   const deleteKey=button('APIキーを削除',async()=>{
     if(!window.confirm('このブラウザに保存したJev APIキーを削除しますか？ 再び利用するにはAPIキーの再入力が必要です。'))return;
     await aiLock(async()=>{aiEpoch++;aiLocal={enabled:false,key:''};await GM.setValue(AI_LOCAL,aiLocal);});key.value='';key.placeholder='TypeSafeのJev APIキー';aiStatus('APIキーを削除しました。');scan();
-  },maintenanceActions);deleteKey.className='danger';deleteKey.style.marginLeft='auto';refreshEnabled();
-  return {read:()=>({aiInterests:interests.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiConditions:conditions.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiThreshold:Number(threshold.value),aiEnabled:enabled.checked,aiBodyEnabled:bodyEnabled.checked,aiBodyLow:Number(low.value),aiDebug:debug.checked,aiShowProgress:showProgress.checked,aiConcurrency:Number(concurrency.value),aiRequestLimit:Number(requestLimit.value)}),
-    restore:next=>{interests.value=next.aiInterests.join('\n');conditions.value=next.aiConditions.join('\n');threshold.value=String(next.aiThreshold);enabled.checked=next.aiEnabled;bodyEnabled.checked=next.aiBodyEnabled;low.value=String(next.aiBodyLow);debug.checked=next.aiDebug;showProgress.checked=next.aiShowProgress;concurrency.value=String(next.aiConcurrency);requestLimit.value=String(next.aiRequestLimit);refreshRange(threshold);refreshEnabled();},
+  },keyRow);deleteKey.className='danger';deleteKey.style.cssText='flex-shrink:0;white-space:nowrap';refreshEnabled();
+  return {read:()=>({aiHighlightColor:highlightColor.value,aiInterests:interests.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiConditions:conditions.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiThreshold:Number(threshold.value),aiEnabled:enabled.checked,aiBodyEnabled:bodyEnabled.checked,aiBodyLow:Number(low.value),aiDebug:debug.checked,aiShowProgress:showProgress.checked,aiConcurrency:Number(concurrency.value),aiRequestLimit:Number(requestLimit.value)}),
+    restore:next=>{highlightColor.value=next.aiHighlightColor;interests.value=next.aiInterests.join('\n');conditions.value=next.aiConditions.join('\n');threshold.value=String(next.aiThreshold);enabled.checked=next.aiEnabled;bodyEnabled.checked=next.aiBodyEnabled;low.value=String(next.aiBodyLow);debug.checked=next.aiDebug;showProgress.checked=next.aiShowProgress;concurrency.value=String(next.aiConcurrency);requestLimit.value=String(next.aiRequestLimit);refreshRange(threshold);refreshEnabled();},
+    hasNewKey:()=>!!key.value.trim(),
     check:()=>{},
     save:async()=>{await aiLock(async()=>{aiEpoch++;const old=await GM.getValue(AI_LOCAL,{enabled:false,key:''});aiLocal={...old,stopped:false,key:key.value.trim()||old.key||'',failures:0,blockedUntil:0};await GM.setValue(AI_LOCAL,aiLocal);});key.value='';key.placeholder=aiLocal.key?'APIキー登録済み（変更時だけ入力）':'TypeSafeのJev APIキー';aiStatus(aiActive()?'Jevを有効にしました。':'Jevオフ。キーワード除外のみ動作します。');}};
 }
@@ -479,12 +498,13 @@ try {
     const old=await GM.getValue(AI_LOCAL,{});
     config=validate({...raw,aiEnabled:raw.aiEnabled??(old.enabled===true),aiBodyEnabled:raw.aiBodyEnabled??(old.bodyEnabled===true),aiBodyLow:raw.aiBodyLow??old.bodyLow??0.3,aiDebug:raw.aiDebug??(old.debug===true)});
   }else config=validate(raw);
-  if(protectedSettings===null||JSON.stringify(raw)!==JSON.stringify(config))await persistSettings(config,'migration');
+  if(protectedSettings===null||JSON.stringify(raw)!==JSON.stringify(config))await persistSettings(config,'migration',validate(protectedSettings??defaults));
 
 }
 catch (e) { alert('Y!News Filter Plus: 設定を読み込めません。保存データは上書きしません。\n'+e.message); return; }
 const MARK = 'data-yne-plus-hidden',HIGHLIGHT='data-yne-plus-highlight';
 const protectedArea = 'header,nav,footer,#uamods-article,#uamods-pickup,#articleCommentModule,[data-ual-view-type="comment"],[data-cl-params*="_cl_vmodule:comment"],[contenteditable="true"],#yne-plus-ui,#yne-plus-overlay';
+let highlightPreview=null;
 const css = document.createElement('style');
 css.textContent = `[${MARK}]{display:none!important}[${HIGHLIGHT}]{background-color:#fff3bf!important;box-shadow:inset 4px 0 #e0a800!important}[${HIGHLIGHT}] a{background-color:transparent!important}`;
 document.head.append(css);
@@ -530,7 +550,7 @@ function candidates() {
   return safe.filter(e=>!safe.some(other=>e!==other && e.contains(other)))
     .sort((a,b)=>a.compareDocumentPosition(b)&2 ? 1 : -1);
 }
-let paused=false, timer, panel=null, renderHiddenWords=null;
+let paused=false, timer, panel=null, renderHiddenWords=null, apiKeyInput=null, errorDialog=null;
 let hiddenWords=[];
 let keywordHidden=new WeakSet(),keywordMatches=new WeakMap();
 let hiddenWordCounts=new Map();
@@ -557,6 +577,14 @@ const busyHost=document.createElement('span');busyHost.id='yne-plus-busy';
 for(const [k,v] of Object.entries({position:'absolute',right:'-4px',bottom:'-5px',width:'16px',height:'16px',display:'none','pointer-events':'none','z-index':'2147483647'}))busyHost.style.setProperty(k,v,'important');
 busyHost.setAttribute('role','status');busyHost.setAttribute('aria-label','Jev判定中');
 const busyRoot=busyHost.attachShadow({mode:'closed'});busyRoot.innerHTML='<style>svg{display:block;width:16px;height:16px;color:#159447;background:white;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){svg{animation:none}}</style><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const errorHost=document.createElement('span');errorHost.id='yne-plus-error';
+errorHost.setAttribute('role','status');
+for(const [k,v] of Object.entries({position:'absolute',right:'-4px',bottom:'-5px',width:'18px',height:'18px',display:'none','z-index':'2147483647',background:'#D93025',color:'#fff','border-radius':'50%',font:'bold 16px/18px sans-serif','text-align':'center',cursor:'help'}))errorHost.style.setProperty(k,v,'important');
+const errorRoot=errorHost.attachShadow({mode:'closed'});
+errorRoot.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18" style="display:block" aria-hidden="true"><circle cx="9" cy="9" r="9" fill="#D93025"/><path d="M6 6L12 12M12 6L6 12" stroke="white" stroke-width="2.4" stroke-linecap="round"/></svg>';
+errorHost.style.setProperty('cursor','pointer','important');
+errorHost.addEventListener('click',openSettingsOrError);
+function activeAIError(){return config.aiEnabled?(aiStats.systemError||((aiLocal.stopped||aiLocal.failures>0)&&aiLocal.lastError)||''):'';}
 const progressHost=document.createElement('div');progressHost.id='yne-plus-progress';
 for(const [k,v] of Object.entries({position:'absolute',top:'100%',right:'0',width:'max-content','max-width':'min(280px,calc(100vw - 24px))','padding-top':'6px',display:'none'}))progressHost.style.setProperty(k,v,'important');
 const progressRoot=progressHost.attachShadow({mode:'closed'});
@@ -564,7 +592,14 @@ const progressStyle=document.createElement('style');progressStyle.textContent='.
 const progressText=document.createElement('div');progressText.className='progress';progressText.setAttribute('role','status');progressRoot.append(progressText);
 function positionHover(){hoverHost.style.top=aiRunning&&config.aiShowProgress?`calc(100% + ${progressHost.offsetHeight}px)`:'100%';}
 function renderAIProgress(){
-  busyHost.style.setProperty('display',aiRunning?'block':'none','important');
+  const error=activeAIError();
+  overlay.style.setProperty('display',config.showPageChip||(aiRunning&&config.aiShowProgress)?'block':'none','important');
+  badge.style.setProperty('display',config.showPageChip?'block':'none','important');
+  busyHost.style.setProperty('display',config.showPageChip&&aiRunning&&!error?'block':'none','important');
+  errorHost.style.setProperty('display',config.showPageChip&&error?'block':'none','important');
+  errorHost.title=error;errorHost.setAttribute('aria-label',error?'Jevエラー：'+error:'');
+  badge.title=error?'Jevエラー：'+error+'（クリックで設定を開く）':'Y!News Filter Plus の設定を開く';
+  syncToolbarBadge();
   progressHost.style.setProperty('display',aiRunning&&config.aiShowProgress?'block':'none','important');
   if(aiRunning)progressText.textContent=`Jev判定中：${aiProgress.done} / ${aiProgress.total} 記事完了\n${aiProgress.phase}`;
   positionHover();
@@ -591,17 +626,30 @@ function renderHoverWords(){
   if(!words.length){const empty=document.createElement('span');empty.className='empty';empty.textContent='非表示中のワードはありません';hoverList.append(empty);}
 }
 let pointerOverBadge=false;
-function toggleHover(){hoverHost.style.display=pointerOverBadge||overlay.contains(document.activeElement)?'block':'none';}
+function toggleHover(){hoverHost.style.display=config.showPageChip&&(pointerOverBadge||overlay.contains(document.activeElement))?'block':'none';}
 overlay.addEventListener('mouseenter',()=>{pointerOverBadge=true;toggleHover();});
 overlay.addEventListener('mouseleave',()=>{pointerOverBadge=false;toggleHover();});
 overlay.addEventListener('focusin',toggleHover);overlay.addEventListener('focusout',()=>queueMicrotask(toggleHover));
-overlay.append(badge,progressHost,busyHost,hoverHost);badge.addEventListener('click',editor);document.body.append(overlay);
+overlay.append(badge,progressHost,busyHost,errorHost,hoverHost);badge.addEventListener('click',openSettingsOrError);document.body.append(overlay);
+let toolbarCount=0,toolbarState=null;
+function syncToolbarBadge(){
+  const error=activeAIError(),state=JSON.stringify([toolbarCount,error]);
+  if(location.protocol!=='chrome-extension:'&&toolbarState!==state){toolbarState=state;void bridge.updateBadge(toolbarCount,error).catch(()=>{toolbarState=null;});}
+}
 function updateBadge(count) {
+  toolbarCount=count;
   const label=!config.enabled?'除外オフ':paused?'一時表示中':`${count}件非表示中`;
   if(badge.textContent!==label)badge.textContent=label;
   badge.setAttribute('aria-label',`Y!News Filter Plus: ${label}。設定を開く`);
 }
+function updateHighlightStyle(){
+  const color=highlightPreview??config.aiHighlightColor;
+  const articleCSS=`[${MARK}]{display:none!important}[${HIGHLIGHT}]{background-color:${color}!important;box-shadow:inset 4px 0 ${color}!important}[${HIGHLIGHT}] a{background-color:transparent!important}`;
+  if(css.textContent!==articleCSS)css.textContent=articleCSS;
+}
 function scan() {
+  if(!connected())return document.querySelectorAll(`[${MARK}]`).length;
+  updateHighlightStyle();
   if(location.href!==filterPageURL){filterPageURL=location.href;temporarilyShownWords.clear();aiRequests=0;aiStats=freshAIStats();}
   const wanted = new Set(), highlighted=new Set(), matchedWords=new Map();
   keywordHidden=new WeakSet();keywordMatches=new WeakMap();
@@ -655,20 +703,47 @@ function scan() {
   void runAI();
   return wanted.size;
 }
-function schedule() { if(!timer) timer=setTimeout(()=>{timer=null;scan();},120); }
+function schedule() { if(!connected())return; if(!timer) timer=setTimeout(()=>{timer=null;scan();},120); }
 new MutationObserver(records=>{
   if(records.some(r=>!(r.target.nodeType===1?r.target:r.target.parentElement)?.closest?.('#yne-plus-ui,#yne-plus-overlay'))) schedule();
 }).observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,
   attributeFilter:['href','class','aria-label','alt']});
 async function reloadSettings() {
-  try { const saved=await GM.getValue(KEY,null);if(saved===null)throw Error('保存設定が見つかりません。現在の設定を保持します。');config=validate(saved); await loadAI(); schedule(); }
-  catch(e) { console.warn('YNE settings:',e); }
+  if(!connected())return;
+  try { const saved=await GM.getValue(KEY,null);if(saved===null)return; // 初回の未保存状態では、現在の設定を保持する。
+config=validate(saved); await loadAI(); schedule(); }
+  catch(e) { if(connected())console.warn('YNE settings:',e); }
 }
 window.addEventListener('focus',reloadSettings);
 window.addEventListener('pageshow',event=>{temporarilyShownWords.clear();filterPageURL=location.href;if(event.persisted){aiRequests=0;aiStats=freshAIStats();}scan();void reloadSettings();});
 window.addEventListener('popstate',()=>scan());
 window.addEventListener('hashchange',()=>scan());
 setInterval(()=>{if(location.href!==filterPageURL)scan();},500);
+function openSettingsOrError(){
+  const error=activeAIError();
+  if(!error){editor();return;}
+  if(errorDialog){errorDialog.focus();return;}
+  const status=Number(/HTTP (\d{3})/.exec(error)?.[1]);
+  const keyError=status===401||status===403;
+  const advice=keyError?'TypeSafeでAPIキーが有効か確認し、有効なキーを入力し直してください。403の場合はAPIへのアクセス権限も確認してください。':
+    status===402?'TypeSafeで残高と支払い設定を確認し、必要なら入金してください。その後、設定画面の「直ちに再判定」で再開してください。':
+    status===429?'APIの利用制限に達しています。しばらく待って再試行してください。繰り返す場合は同時問い合わせ数を減らしてください。':
+    status>=500?'Jev側で障害が発生している可能性があります。しばらく待って再試行してください。':
+    [400,404,422].includes(status)?'拡張機能を最新版に更新してください。改善しない場合は、下記のエラー内容を添えて不具合を報告してください。':
+    /保存|読み込み/.test(error)?'Chromeの拡張機能を再読み込みした後、Yahooのページも再読み込みしてください。改善しない場合は下記のエラー内容を確認してください。':
+    'ネットワーク接続と、拡張機能の api.typesafe.ai への接続許可を確認してください。一時的な通信障害なら、しばらく待って再試行してください。';
+  const dialog=document.createElement('dialog');errorDialog=dialog;dialog.id='yne-plus-error-dialog';dialog.setAttribute('aria-label','Jevのエラー詳細と対処方法');
+  dialog.style.cssText='width:min(520px,calc(100vw - 40px));max-height:80vh;overflow:auto;margin:auto;padding:0;border:1px solid #d9b3b3;border-radius:14px;background:white;color:#172b42;box-shadow:0 12px 60px #0005';
+  const host=document.createElement('div');dialog.append(host);const root=host.attachShadow({mode:'closed'});
+  const style=document.createElement('style');style.textContent=':host{display:block;padding:24px;font:15px/1.7 system-ui;color:#172b42;text-align:left}h2{margin:0 0 18px;font-size:21px}h3{font-size:15px;margin:16px 0 6px}p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}button{display:block;margin:24px 0 0 auto;padding:10px 18px;border:0;border-radius:8px;background:#1768bd;color:white;font:600 15px system-ui;cursor:pointer}';root.append(style);
+  for(const [tag,text] of [['h2','Jevのエラー'],['h3','エラー詳細'],['p',error],['h3','対処方法'],['p',advice]]){const el=document.createElement(tag);el.textContent=text;root.append(el);}
+  const close=document.createElement('button');close.type='button';close.textContent=keyError?'閉じてAPIキーを設定':'閉じる';close.onclick=()=>dialog.close();root.append(close);
+  dialog.addEventListener('close',()=>{
+    dialog.remove();errorDialog=null;
+    if(keyError){editor();const section=apiKeyInput?.closest('details');if(section)section.open=true;apiKeyInput?.scrollIntoView?.({block:'center'});apiKeyInput?.focus({preventScroll:true});}
+  },{once:true});
+  document.body.append(dialog);dialog.showModal();close.focus();
+}
 function editor() {
   if(panel) { panel.showModal(); return; }
   let editorBaseline=JSON.stringify(config);
@@ -738,9 +813,11 @@ function editor() {
   function checkbox(key,label,parent){const l=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.checked=key==='loose'?config.normalization==='loose':config[key];inputs[key]=input;l.append(input,document.createTextNode(label));parent.append(l);}
   checkbox('enabled','記事の除外を有効にする',settings);
   checkbox('ignoreCase','英字の大文字・小文字を同じものとして扱う',settings);
+  const caseHint=text('p','例：ABC と abc を同一視します。',settings,'hint');caseHint.id='ynfp-case-hint';caseHint.style.cssText='margin:4px 0 14px 28px';inputs.ignoreCase.setAttribute('aria-describedby',caseHint.id);
   checkbox('loose','全角・半角、アクセント、似た記号、中黒の有無を同じものとして扱う',settings);
+  const looseHint=text('p','例：ＡＢＣ と ABC、café と cafe、ジャンヌ・ダルク と ジャンヌダルクを同一視します。日本語の濁点・半濁点は区別します。',settings,'hint');looseHint.id='ynfp-loose-hint';looseHint.style.cssText='margin:4px 0 14px 28px';inputs.loose.setAttribute('aria-describedby',looseHint.id);
   checkbox('ignoreSeparators','空白・句読点を無視して照合する',settings);
-  text('p','例：ＡＢＣ と abc、café と cafe。中黒「・」「･」の有無も同一視します。日本語の濁点・半濁点は区別します。',settings,'hint');
+  checkbox('showPageChip','ページ上の「○件非表示中」チップを表示する',settings);
   const advanced=text('details','',body);text('summary','行ごとの細かな指定',advanced);
   text('p','通常は単語だけで使えます。末尾に || を付けると、その行だけの照合条件や除外率を指定できます。複数の行に一致した場合は、上の行を優先します。',advanced,'hint');
   text('p','ABC||case:1 → 大文字・小文字を区別。case:0 → 区別しない。行の指定は全体の設定より優先します。',advanced,'hint');
@@ -752,18 +829,24 @@ function editor() {
     await exclusive(async()=>{
       const latest=validate(await GM.getValue(KEY,defaults));
       if(JSON.stringify(latest)!==editorBaseline)throw Error('別のタブまたは同期で設定が更新されました。上書きを防ぐため保存を中止しました。設定画面を閉じて開き直してください。');
-      await aiUI.save();await persistSettings(next,'editor-save',JSON.parse(editorBaseline));config=next;editorBaseline=JSON.stringify(next);
+      const previous=JSON.parse(editorBaseline);
+      if(JSON.stringify(next)===editorBaseline&&!aiUI.hasNewKey())return;
+      const presentationOnly=['aiShowProgress','aiHighlightColor','showPageChip'].some(k=>next[k]!==previous[k])&&Object.keys(next).every(k=>['aiShowProgress','aiHighlightColor','showPageChip'].includes(k)||JSON.stringify(next[k])===JSON.stringify(previous[k]));
+      if(!presentationOnly||aiUI.hasNewKey())await aiUI.save();
+      await persistSettings(next,'editor-save',previous);config=next;editorBaseline=JSON.stringify(next);
     });
     status.textContent=`保存しました。現在 ${scan()} 件を非表示。`;
     void syncNow(null,true);
   }
-  let saveTimer=null,saveChain=Promise.resolve(),dirty=false,composing=false;
+  let saveTimer=null,saveChain=Promise.resolve(),pendingSave=null,dirty=false,composing=false,editRevision=0;
   function applySettings(){
-    clearTimeout(saveTimer);saveTimer=null;dirty=false;
-    const job=saveChain.then(()=>saveDraft());saveChain=job.catch(()=>{});return job;
+    clearTimeout(saveTimer);saveTimer=null;
+    const revision=editRevision;
+    const job=saveChain.then(()=>saveDraft()).then(()=>{if(editRevision===revision)dirty=false;},e=>{dirty=true;throw e;});
+    pendingSave=job;saveChain=job.catch(()=>{});return job;
   }
   function queueSave(delay=500){
-    dirty=true;clearTimeout(saveTimer);status.textContent='変更を自動保存しています…';
+    dirty=true;editRevision++;clearTimeout(saveTimer);status.textContent='変更を自動保存しています…';
     if(composing)return;
     saveTimer=setTimeout(()=>{void applySettings().catch(e=>{status.textContent='自動保存できません: '+e.message;});},delay);
   }
@@ -779,15 +862,39 @@ function editor() {
   button('設定を書き出す',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(draft(),null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='ynews-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);},backupButtons);
   const file=document.createElement('input');file.type='file';file.accept='.json,application/json';file.hidden=true;body.append(file);
   button('設定を読み込む',()=>file.click(),backupButtons);
-  file.onchange=async()=>{try{if(!file.files[0])return;if(!confirm('読み込んだ設定で現在の設定を置き換えますか？変更前の設定は履歴に残ります。'))return;let value=JSON.parse(await file.files[0].text());if(value.yne_words!==undefined)value=JSON.parse(value.yne_words);if(Array.isArray(value))value={...defaults,rows:value,ignoreCase:false,normalization:'legacy',legacyRate:true};const next=validate(value);aiUI.restore(next);area.value=next.rows.join('\n');for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];updateCount();await applySettings();}catch(e){status.textContent='読み込み失敗: '+e.message;}finally{file.value='';}};
+  const historyList=text('div','',backup);historyList.dataset.noAutosave='true';
+  button('保存履歴から復元',async()=>{
+    const history=await GM.getValue(SETTINGS_HISTORY,[]);historyList.replaceChildren();
+    if(!history.length)text('p','保存履歴はありません。',historyList);
+    for(const h of history){
+      const entry=text('details','',historyList);text('summary',new Date(h.time).toLocaleString(),entry);
+      const preview=text('pre',JSON.stringify(h.settings,null,2),entry);preview.style.cssText='max-height:240px;overflow:auto;white-space:pre-wrap';
+      button('この履歴を復元',async()=>{
+        if(!confirm('現在の設定をこの履歴で置き換えますか？'))return;
+        await saveChain;
+        const next=validate(h.settings);aiUI.restore(next);area.value=next.rows.join('\n');
+        for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];
+        updateCount();await applySettings();historyList.replaceChildren();status.textContent='保存履歴から設定を復元しました。';
+      },entry);
+    }
+  },backupButtons);
+  file.onchange=async()=>{try{if(!file.files[0])return;if(!confirm('読み込んだ設定で現在の設定を置き換えますか？変更前の設定は、この端末の「保存履歴から復元」で戻せます。'))return;let value=JSON.parse(await file.files[0].text());if(value.yne_words!==undefined)value=JSON.parse(value.yne_words);if(Array.isArray(value))value={...defaults,rows:value,ignoreCase:false,normalization:'legacy',legacyRate:true};const next=validate(value);aiUI.restore(next);area.value=next.rows.join('\n');for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];updateCount();await applySettings();}catch(e){status.textContent='読み込み失敗: '+e.message;}finally{file.value='';}};
   const footer=text('div','',root,'footer');
   button(paused?'除外を再開':'一時的に全件表示',()=>{paused=!paused;scan();status.textContent=paused?'一時表示中です。設定は変わりません。':'除外を再開しました。';},footer);
-  button('閉じる',()=>panel.close(),footer);
-  panel.addEventListener('close',()=>{if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
+  // 保存の完了を待ってから閉じる。失敗時は入力内容を画面に残す。
+  let closing=false;
+  async function closeEditor(){
+    if(closing)return;closing=true;
+    try{if(pendingSave&&!dirty)await pendingSave;while(dirty)await applySettings();panel.close();}
+    finally{closing=false;}
+  }
+  button('閉じる',closeEditor,footer);
+  panel.addEventListener('cancel',e=>{e.preventDefault();void closeEditor().catch(error=>{status.textContent='自動保存できません: '+error.message;});});
+  panel.addEventListener('close',()=>{highlightPreview=null;updateHighlightStyle();if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
 }
 await loadAI();
 setInterval(()=>void runAI(),60000);
-await GM.registerMenuCommand('Y!News Filter Plus 設定',editor);
+await GM.registerMenuCommand('Y!News Filter Plus 設定',openSettingsOrError);
 await GM.registerMenuCommand('Y!News Filter Plus 一時表示／戻す',()=>{paused=!paused;scan();});
 scan();
 

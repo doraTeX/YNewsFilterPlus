@@ -13,6 +13,6 @@ for(const f of walk(dist)){
  const text=readFileSync(f,'utf8');
  if(/github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9]+|\/Users\/|api\.github\.com|gist\.github\.com/.test(text))throw Error('配布物に不要な接続先・個人情報の候補があります: '+f);
 }
-rmSync(zip,{force:true});execFileSync('zip',['-qr',zip,'.'],{cwd:dist});
+rmSync(zip,{force:true});execFileSync('zip',['-qr',zip,'.','-x','*.DS_Store'],{cwd:dist});
 writeFileSync(zip+'.sha256',createHash('sha256').update(readFileSync(zip)).digest('hex')+'  '+zip.split('/').pop()+'\n');
 console.log('配布ZIPを作成しました: '+zip);

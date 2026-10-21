@@ -1,10 +1,10 @@
-const defaults = {version: 1, rows: [], enabled: true, ignoreCase: true,
-  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.9, aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiDebug:false, aiShowProgress:true, aiConcurrency:3, aiRequestLimit:200};
+const defaults = {version: 1, rows: [], enabled: true, showPageChip: true, ignoreCase: true,
+  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.8, aiHighlightColor: "#fff3bf", aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiDebug:false, aiShowProgress:true, aiConcurrency:3, aiRequestLimit:200};
 function validate(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.rows) ||
       value.rows.some(x => typeof x !== 'string')) throw Error('設定形式が不正です');
   const out = {...defaults};
-  for (const k of ['enabled', 'ignoreCase', 'ignoreSeparators', 'legacyRate', 'aiEnabled', 'aiBodyEnabled', 'aiDebug', 'aiShowProgress']) {
+  for (const k of ['enabled', 'showPageChip', 'ignoreCase', 'ignoreSeparators', 'legacyRate', 'aiEnabled', 'aiBodyEnabled', 'aiDebug', 'aiShowProgress']) {
     if (k in value && typeof value[k] !== 'boolean') throw Error(k + ' は真偽値で指定してください');
     if (k in value) out[k] = value[k];
   }
@@ -17,7 +17,10 @@ function validate(value) {
   if(value.aiInterests!==undefined&&(!Array.isArray(value.aiInterests)||value.aiInterests.some(x=>typeof x!=='string')))throw Error('興味のあるキーワードは文字列の配列で指定してください');
   out.aiInterests=[...new Set((value.aiInterests||[]).map(x=>x.trim()).filter(Boolean))];
   if(out.aiInterests.some(x=>x.length>500))throw Error('興味のあるキーワードは1件500文字までです');
-  out.aiThreshold=value.aiThreshold??0.9;
+  out.aiHighlightColor=value.aiHighlightColor??defaults.aiHighlightColor;
+  if(typeof out.aiHighlightColor!=='string'||!/^#[0-9a-f]{6}$/i.test(out.aiHighlightColor))throw Error('ハイライト色は6桁のカラーコードで指定してください');
+  out.aiHighlightColor=out.aiHighlightColor.toLowerCase();
+  out.aiThreshold=value.aiThreshold??defaults.aiThreshold;
   if(typeof out.aiThreshold!=='number'||!Number.isFinite(out.aiThreshold)||out.aiThreshold<0.5||out.aiThreshold>1)throw Error('AI判定値は0.5〜1にしてください');
   out.aiBodyLow=value.aiBodyLow??0.3;
   if(typeof out.aiBodyLow!=='number'||!Number.isFinite(out.aiBodyLow)||out.aiBodyLow<0||out.aiBodyLow>1)throw Error('本文追加判定の下限は0〜1にしてください');
