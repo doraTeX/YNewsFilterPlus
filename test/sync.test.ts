@@ -8,7 +8,7 @@ function area(data:()=>Record<string,any>){return {get:async(key:any)=>{const d=
 beforeEach(()=>{local={};remote={};vi.stubGlobal('crypto',webcrypto);vi.stubGlobal('chrome',{storage:{local:area(()=>local),sync:area(()=>remote)}});});
 const settings=(word:string)=>validate({...defaults,rows:[word]});
 describe('移行と個人情報',()=>{
- it('ユーザースクリプトの全設定を保持し認証情報を破棄',()=>{const input={...defaults,rows:['ABC'],aiConditions:['スポーツ'],aiInterests:['科学'],aiEnabled:true,aiThreshold:.8,aiConcurrency:5,token:'SECRET',key:'SECRET',gist:'SECRET'};const next=validate(input);expect(next.aiConcurrency).toBe(5);expect(next.aiEnabled).toBe(true);expect(next.aiThreshold).toBe(.8);expect(JSON.stringify(next)).not.toContain('SECRET');});
+ it('読み込んだ全設定を保持し認証情報を破棄',()=>{const input={...defaults,rows:['ABC'],aiConditions:['スポーツ'],aiInterests:['科学'],aiEnabled:true,aiThreshold:.8,aiConcurrency:5,token:'SECRET',key:'SECRET',gist:'SECRET'};const next=validate(input);expect(next.aiConcurrency).toBe(5);expect(next.aiEnabled).toBe(true);expect(next.aiThreshold).toBe(.8);expect(JSON.stringify(next)).not.toContain('SECRET');});
  it('中黒・全角・ダイアクリティカルマークを同一視',()=>expect(normalize('Ｃａｆé・Ａ',defaults,false)).toBe('cafea'));
  it('不正な設定を拒否',()=>expect(()=>validate({...defaults,aiThreshold:3})).toThrow());
 });
