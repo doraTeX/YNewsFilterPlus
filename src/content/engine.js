@@ -841,7 +841,7 @@ function editor() {
   text('p','単語||rate:90 → 一致した10件のうち9件を除外。rate:90! → 先頭の1件を表示して残り9件を除外。割合は走査順の周期で、乱数ではありません。未指定・rate:100は全件除外です。',advanced,'hint');
   checkbox('legacyRate','100%指定でも100件に1件を表示する',advanced);
   text('p','この例外を有効にすると、rate:100 は各100件の末尾、rate:100! は先頭を表示します。',advanced,'hint');
-  async function saveDraft(){
+  async function saveDraft(reason='editor-save'){
     const next=draft();aiUI.check();
     await exclusive(async()=>{
       const latest=validate(await GM.getValue(KEY,defaults));
@@ -850,16 +850,16 @@ function editor() {
       if(JSON.stringify(next)===editorBaseline&&!aiUI.hasNewKey())return;
       const presentationOnly=['aiShowProgress','aiHighlightColor','showPageChip'].some(k=>next[k]!==previous[k])&&Object.keys(next).every(k=>['aiShowProgress','aiHighlightColor','showPageChip'].includes(k)||JSON.stringify(next[k])===JSON.stringify(previous[k]));
       if(!presentationOnly||aiUI.hasNewKey())await aiUI.save();
-      await persistSettings(next,'editor-save',previous);config=next;editorBaseline=JSON.stringify(next);
+      await persistSettings(next,reason,previous);config=next;editorBaseline=JSON.stringify(next);
     });
     status.textContent=`保存しました。現在 ${scan()} 件を非表示。`;
     void syncNow(null,true);
   }
   let saveTimer=null,saveChain=Promise.resolve(),pendingSave=null,dirty=false,composing=false,editRevision=0;
-  function applySettings(){
+  function applySettings(reason='editor-save'){
     clearTimeout(saveTimer);saveTimer=null;
     const revision=editRevision;
-    const job=saveChain.then(()=>saveDraft()).then(()=>{if(editRevision===revision)dirty=false;},e=>{dirty=true;throw e;});
+    const job=saveChain.then(()=>saveDraft(reason)).then(()=>{if(editRevision===revision)dirty=false;},e=>{dirty=true;throw e;});
     pendingSave=job;saveChain=job.catch(()=>{});return job;
   }
   function queueSave(delay=500){
@@ -896,12 +896,12 @@ function editor() {
         await saveChain;
         const next=validate(h.settings);aiUI.restore(next);area.value=next.rows.join('\n');
         for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];
-        updateCount();await applySettings();historyList.replaceChildren();status.textContent='保存履歴から設定を復元しました。';
+        updateCount();await applySettings('history-restore');historyList.replaceChildren();status.textContent='保存履歴から設定を復元しました。';
       },entry);
     }
     revealHistory();
   },backupButtons);
-  file.onchange=async()=>{try{if(!file.files[0])return;if(!confirm('読み込んだ設定で現在の設定を置き換えますか？変更前の設定は、この端末の「保存履歴から復元」で戻せます。'))return;let value=JSON.parse(await file.files[0].text());if(value.yne_words!==undefined)value=JSON.parse(value.yne_words);if(Array.isArray(value))value={...defaults,rows:value,ignoreCase:false,normalization:'legacy',legacyRate:true};const next=validate(value);aiUI.restore(next);area.value=next.rows.join('\n');for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];updateCount();await applySettings();}catch(e){status.textContent='読み込み失敗: '+e.message;}finally{file.value='';}};
+  file.onchange=async()=>{try{if(!file.files[0])return;if(!confirm('読み込んだ設定で現在の設定を置き換えますか？変更前の設定は、この端末の「保存履歴から復元」で戻せます。'))return;let value=JSON.parse(await file.files[0].text());if(value.yne_words!==undefined)value=JSON.parse(value.yne_words);if(Array.isArray(value))value={...defaults,rows:value,ignoreCase:false,normalization:'legacy',legacyRate:true};const next=validate(value);aiUI.restore(next);area.value=next.rows.join('\n');for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];updateCount();await applySettings('json-import');}catch(e){status.textContent='読み込み失敗: '+e.message;}finally{file.value='';}};
   const footer=text('div','',root,'footer');
   button(paused?'除外を再開':'一時的に全件表示',()=>{paused=!paused;scan();status.textContent=paused?'一時表示中です。設定は変わりません。':'除外を再開しました。';},footer);
   // 保存の完了を待ってから閉じる。失敗時は入力内容を画面に残す。

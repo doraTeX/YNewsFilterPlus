@@ -13,7 +13,18 @@ export class Store{
   return s;
  }
  async remember(s:State){await chrome.storage.local.set({[STATE]:s});}
- async history(next:Settings,reason:string){const data=await chrome.storage.local.get([SETTINGS,HISTORY]);const old=data[SETTINGS];if(old&&JSON.stringify(old)!==JSON.stringify(next))await chrome.storage.local.set({[HISTORY]:[{time:Date.now(),reason,settings:old},...(data[HISTORY]||[])].slice(0,10)});}
+ async history(next:Settings,reason:string){
+  const data=await chrome.storage.local.get([SETTINGS,HISTORY]),old=data[SETTINGS];
+  if(!old||JSON.stringify(old)===JSON.stringify(next))return;
+  const history=data[HISTORY]||[],last=history[0],now=Date.now();
+  // 連続編集では開始前の設定を残し、最終編集時刻だけ更新する。
+  // 時刻は永続化し、サービスワーカーが再起動しても同じまとまりとして扱う。
+  const elapsed=now-(last?.lastChanged??last?.time);
+  const grouped=['editor-save','chrome-sync'].includes(reason)&&last?.reason===reason&&elapsed>=0&&elapsed<5*60*1000;
+  const entries=grouped?[{...last,lastChanged:now},...history.slice(1)]:[{time:now,lastChanged:now,reason,settings:old},...history];
+  await chrome.storage.local.set({[HISTORY]:entries.slice(0,10)});
+ }
+
  async save(value:unknown,reason:string,expected?:unknown){
   const settings=validate(value),current=(await chrome.storage.local.get(SETTINGS))[SETTINGS];
   if(expected!==undefined&&JSON.stringify(validate(current??defaults))!==JSON.stringify(validate(expected)))throw Error('別の画面で設定が更新されました。設定を開き直してください');

@@ -74,3 +74,21 @@ it('直列化した複数タブ保存では古い編集が新しい値を消さ�
  const results=await Promise.allSettled([store.queue(()=>store.save(settings('先の編集'),'edit',baseline)),store.queue(()=>store.save(settings('後の古い編集'),'edit',baseline))]);
  expect(results.map(r=>r.status)).toEqual(['fulfilled','rejected']);expect(local[SETTINGS].rows).toEqual(['先の編集']);
 });
+
+it('連続編集を1履歴にまとめ、5分空いた編集は別履歴にする',async()=>{
+ const clock=vi.spyOn(Date,'now');let now=1000000;clock.mockImplementation(()=>now);
+ try{
+ local[SETTINGS]=settings('開始前');
+ for(let i=0;i<20;i++){now+=1000;await new Store().save(settings('入力'+i),'editor-save');}
+ expect(local[HISTORY]).toHaveLength(1);expect(local[HISTORY][0].settings.rows).toEqual(['開始前']);
+ expect(local[SETTINGS].rows).toEqual(['入力19']);
+ now+=300000;await new Store().save(settings('次の編集'),'editor-save');
+ expect(local[HISTORY]).toHaveLength(2);expect(local[HISTORY][0].settings.rows).toEqual(['入力19']);
+ await new Store().save(settings('インポート'),'json-import');
+ expect(local[HISTORY]).toHaveLength(3);expect(local[HISTORY][0].settings.rows).toEqual(['次の編集']);
+ await new Store().save(settings('復元'),'history-restore');
+ expect(local[HISTORY]).toHaveLength(4);expect(local[HISTORY][0].settings.rows).toEqual(['インポート']);
+ for(let i=0;i<12;i++)await new Store().save(settings('置換'+i),'json-import');
+ expect(local[HISTORY]).toHaveLength(10);
+ }finally{clock.mockRestore();}
+});
