@@ -111,3 +111,32 @@ it.each(['chip','toolbar'])('認証エラーの%sクリックで対処を示し�
  expect(root.activeElement).toBe(root.querySelector('[aria-label="Jev APIキー"]'));
  expect(document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.open).toBe(true);
 });
+
+it('履歴なしでもボタン操作への応答を表示して履歴欄に移動する',async()=>{
+ await boot();Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='保存履歴から復元')!.click();
+ await vi.advanceTimersByTimeAsync(1);
+ const list=root.querySelector('[aria-label="保存履歴"]')!;
+ expect(list.textContent).toContain('保存履歴はありません');expect(root.activeElement).toBe(list);
+});
+it('保存履歴を一覧表示し選択した設定を復元できる',async()=>{
+ store.yne_plus_settings_history_v2=[{time:Date.now(),settings:{...defaults,rows:['復元する語']}}];
+ await boot();Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='保存履歴から復元')!.click();await vi.advanceTimersByTimeAsync(1);
+ const list=root.querySelector('[aria-label="保存履歴"]')!;
+ expect(list.textContent).toContain('保存履歴（1件）');expect(root.activeElement).toBe(list);
+ list.querySelector('details')!.open=true;list.querySelector<HTMLButtonElement>('button')!.click();await vi.advanceTimersByTimeAsync(1);
+ expect(store.yne_plus_settings_v2.rows).toEqual(['復元する語']);
+});
+
+it('キャッシュ確認とは独立して変更したAPIキーを検証し認証エラーを赤字で維持する',async()=>{
+ await boot();
+ const key=root.querySelector<HTMLInputElement>('[aria-label="Jev APIキー"]')!;
+ key.value='invalid-test-key';key.dispatchEvent(new Event('change',{bubbles:true}));
+ await vi.advanceTimersByTimeAsync(1);
+ expect(requests).toHaveLength(1);
+ requests[0].onload({status:401,responseHeaders:''});await vi.advanceTimersByTimeAsync(10);
+ const notice=Array.from(root.querySelectorAll('p')).find(p=>p.textContent?.includes('API Keyが無効です'))!;
+ expect(notice).toBeDefined();expect(notice.style.color).toBe('rgb(180, 35, 24)');
+ await vi.advanceTimersByTimeAsync(60000);
+ expect(notice.textContent).toContain('API Keyが無効です');
+ expect(store.yne_plus_jev_local_v1.stopped).toBe(true);
+});

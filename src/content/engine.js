@@ -25,7 +25,7 @@ function addSyncUI({body,text,button,status}){
 // Optional Jev integration. Credentials and decisions stay in local GM storage.
 const AI_LOCAL='yne_plus_jev_local_v1', AI_CACHE='yne_plus_jev_cache_v1';
 const AI_MODEL='jev-1.13.0', AI_TTL=7*24*60*60*1000;
-let aiLocal={enabled:false,key:''}, aiCache={}, aiRunning=false, aiStatusElement=null;
+let aiLocal={enabled:false,key:''}, aiCache={}, aiRunning=false, aiKeyChecking=false, aiStatusElement=null;
 let aiProgress={done:0,total:0,phase:'待機中'};
 let aiMessage='Jevは未設定です。', aiRequests=0, aiEpoch=0;
 let aiStatsElement=null, renderAIBreakdown=null;
@@ -190,7 +190,23 @@ function logAIDecisions(force=false){
 
 function jevHTTPMessage(status){return ({400:'リクエスト形式が受理されませんでした',401:'APIキーが無効、または認証に失敗しました',402:'支払い・クレジット不足の可能性があります。TypeSafeで残額と請求設定を確認してください',403:'APIへのアクセスが拒否されました。キーの権限を確認してください',404:'指定したモデルまたはAPIが見つかりません',422:'判定リクエストの内容が受理されませんでした',429:'APIの利用制限に達しました'})[status]||'Jev側のエラーが発生しました';}
 
-function aiStatus(message){aiMessage=message;if(aiRunning){aiProgress.phase=message;renderAIProgress();}if(aiStatusElement?.isConnected)aiStatusElement.textContent=message;renderAIStats();}
+function aiStatus(message){
+  const error=(aiLocal.stopped||aiLocal.failures>0)&&aiLocal.lastError;
+  aiMessage=aiKeyChecking?'APIキーを確認しています…':error||message;
+  if(aiRunning){aiProgress.phase=aiMessage;renderAIProgress();}
+  if(aiStatusElement?.isConnected){aiStatusElement.textContent=aiMessage;aiStatusElement.style.color=error&&!aiKeyChecking?'#b42318':'';aiStatusElement.style.background=error&&!aiKeyChecking?'#fff0ee':'';aiStatusElement.setAttribute('role',error?'alert':'status');}
+  renderAIStats();
+}
+async function verifyChangedAPIKey(){
+  aiKeyChecking=true;aiStatus('');
+  try{
+    // キャッシュとは独立した最小の判定で認証を確認する。使用量にも加算する。
+    await jevSingleRequest({content:'接続確認'},['接続確認'],aiLocal.key);
+  }catch(e){
+    await aiLock(async()=>{aiLocal={...aiLocal,stopped:true,failures:1,lastError:e.status===401?'HTTP 401: API Keyが無効です。有効なJev APIキーを入力してください。':e.message,lastErrorAt:new Date().toISOString()};await GM.setValue(AI_LOCAL,aiLocal);});
+  }finally{aiKeyChecking=false;aiStatus('APIキーの確認が完了しました。');renderAIProgress();}
+}
+
 function aiIdentity(el){
   const a=el.matches('a[href]')?el:[...el.querySelectorAll('a[href]')].find(isNewsLink);
   if(!a||!isNewsLink(a))return null;
@@ -304,7 +320,7 @@ async function saveAIResult(key,value,epoch){
 }
 async function runAI(){
  if(!connected())return;
-  if(aiRunning)return;
+  if(aiRunning||aiKeyChecking)return;
   inspectAITargets();
   const idle=aiIdleReason();if(idle){aiStatus(idle+(aiStats.lastError?' 最後のエラーは使用量欄を確認してください。':''));return;}
   aiRunning=true;aiStats.systemError='';aiProgress={done:0,total:0,phase:'他のタブの処理・キャッシュ確認を待機中'};renderAIProgress();const epoch=aiEpoch;const page=location.href;
@@ -381,6 +397,7 @@ async function runAI(){
           });
           aiStatus(`Jev判定済み：キャッシュ ${Object.keys(aiCache).length} 件／このページの通信 ${aiRequests} 回`);
         }catch(e){
+          if(epoch!==aiEpoch||page!==location.href)return;
           traceAI(cacheKey,e.limit?'上限到達':'エラー',e.message||String(e));
           if(e.limit){aiStatus(e.message);return;}
           await aiLock(async()=>{
@@ -466,7 +483,7 @@ function addAIUI({body,text,button,status,applySettings}){
   };renderAIBreakdown();
   const limitLabel=text('label','1ページの問い合わせ上限（回）',section);
   const requestLimit=document.createElement('input');requestLimit.type='number';requestLimit.min='1';requestLimit.step='1';requestLimit.value=String(config.aiRequestLimit);requestLimit.setAttribute('aria-label','1ページの問い合わせ上限');requestLimit.style.width='100px';limitLabel.append(requestLimit);
-  const concurrencyLabel=text('label','同時問い合わせ数（1〜20、初期値3）',section);
+  const concurrencyLabel=text('label','同時問い合わせ数（1〜20、初期値5）',section);
   const concurrency=text('input','',concurrencyLabel);concurrency.type='number';concurrency.min='1';concurrency.max='20';concurrency.step='1';concurrency.value=String(config.aiConcurrency);concurrency.setAttribute('aria-label','Jev同時問い合わせ数');concurrency.style.width='80px';
   const reportActions=text('div','',container,'buttons');reportActions.style.gap='12px';
   button('判定詳細を表で開く',()=>{openDecisionReport();status.textContent='判定詳細の表を別タブで開きました。';},reportActions);
@@ -487,7 +504,7 @@ function addAIUI({body,text,button,status,applySettings}){
     restore:next=>{highlightColor.value=next.aiHighlightColor;interests.value=next.aiInterests.join('\n');conditions.value=next.aiConditions.join('\n');threshold.value=String(next.aiThreshold);enabled.checked=next.aiEnabled;bodyEnabled.checked=next.aiBodyEnabled;low.value=String(next.aiBodyLow);debug.checked=next.aiDebug;showProgress.checked=next.aiShowProgress;concurrency.value=String(next.aiConcurrency);requestLimit.value=String(next.aiRequestLimit);refreshRange(threshold);refreshEnabled();},
     hasNewKey:()=>!!key.value.trim(),
     check:()=>{},
-    save:async()=>{await aiLock(async()=>{aiEpoch++;const old=await GM.getValue(AI_LOCAL,{enabled:false,key:''});aiLocal={...old,stopped:false,key:key.value.trim()||old.key||'',failures:0,blockedUntil:0};await GM.setValue(AI_LOCAL,aiLocal);});key.value='';key.placeholder=aiLocal.key?'APIキー登録済み（変更時だけ入力）':'TypeSafeのJev APIキー';aiStatus(aiActive()?'Jevを有効にしました。':'Jevオフ。キーワード除外のみ動作します。');}};
+    save:async()=>{const changedKey=key.value.trim();await aiLock(async()=>{aiEpoch++;const old=await GM.getValue(AI_LOCAL,{enabled:false,key:''});aiLocal={...old,stopped:false,key:key.value.trim()||old.key||'',failures:0,blockedUntil:0};await GM.setValue(AI_LOCAL,aiLocal);});key.value='';key.placeholder=aiLocal.key?'APIキー登録済み（変更時だけ入力）':'TypeSafeのJev APIキー';if(changedKey)await verifyChangedAPIKey();else aiStatus(aiActive()?'Jevを有効にしました。':'Jevオフ。キーワード除外のみ動作します。');}};
 }
 
 let config;
@@ -862,10 +879,15 @@ function editor() {
   button('設定を書き出す',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(draft(),null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='ynews-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);},backupButtons);
   const file=document.createElement('input');file.type='file';file.accept='.json,application/json';file.hidden=true;body.append(file);
   button('設定を読み込む',()=>file.click(),backupButtons);
-  const historyList=text('div','',backup);historyList.dataset.noAutosave='true';
+  const historyList=text('div','',backup);historyList.dataset.noAutosave='true';historyList.tabIndex=-1;historyList.setAttribute('aria-label','保存履歴');historyList.style.scrollMarginBlock='24px';
+  function revealHistory(){historyList.focus({preventScroll:true});historyList.scrollIntoView?.({block:'start'});}
   button('保存履歴から復元',async()=>{
-    const history=await GM.getValue(SETTINGS_HISTORY,[]);historyList.replaceChildren();
-    if(!history.length)text('p','保存履歴はありません。',historyList);
+    historyList.replaceChildren();text('p','保存履歴を読み込んでいます…',historyList).setAttribute('role','status');revealHistory();
+    let history;
+    try{history=await GM.getValue(SETTINGS_HISTORY,[]);if(!Array.isArray(history))throw Error('保存履歴の形式が不正です。');}
+    catch(e){historyList.replaceChildren();text('p','保存履歴を読み込めませんでした：'+e.message,historyList).setAttribute('role','alert');revealHistory();return;}
+    historyList.replaceChildren();text('h3',`保存履歴（${history.length}件）`,historyList);
+    if(!history.length)text('p','保存履歴はありません。設定を変更すると、変更前の設定がこの端末に最大10件保存されます。',historyList);
     for(const h of history){
       const entry=text('details','',historyList);text('summary',new Date(h.time).toLocaleString(),entry);
       const preview=text('pre',JSON.stringify(h.settings,null,2),entry);preview.style.cssText='max-height:240px;overflow:auto;white-space:pre-wrap';
@@ -877,6 +899,7 @@ function editor() {
         updateCount();await applySettings();historyList.replaceChildren();status.textContent='保存履歴から設定を復元しました。';
       },entry);
     }
+    revealHistory();
   },backupButtons);
   file.onchange=async()=>{try{if(!file.files[0])return;if(!confirm('読み込んだ設定で現在の設定を置き換えますか？変更前の設定は、この端末の「保存履歴から復元」で戻せます。'))return;let value=JSON.parse(await file.files[0].text());if(value.yne_words!==undefined)value=JSON.parse(value.yne_words);if(Array.isArray(value))value={...defaults,rows:value,ignoreCase:false,normalization:'legacy',legacyRate:true};const next=validate(value);aiUI.restore(next);area.value=next.rows.join('\n');for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];updateCount();await applySettings();}catch(e){status.textContent='読み込み失敗: '+e.message;}finally{file.value='';}};
   const footer=text('div','',root,'footer');

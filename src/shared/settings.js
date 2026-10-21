@@ -1,5 +1,5 @@
 const defaults = {version: 1, rows: [], enabled: true, showPageChip: true, ignoreCase: true,
-  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.8, aiHighlightColor: "#fff3bf", aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiDebug:false, aiShowProgress:true, aiConcurrency:3, aiRequestLimit:200};
+  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.8, aiHighlightColor: "#fff3bf", aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiDebug:false, aiShowProgress:true, aiConcurrency:5, aiRequestLimit:200};
 function validate(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.rows) ||
       value.rows.some(x => typeof x !== 'string')) throw Error('設定形式が不正です');
@@ -24,7 +24,7 @@ function validate(value) {
   if(typeof out.aiThreshold!=='number'||!Number.isFinite(out.aiThreshold)||out.aiThreshold<0.5||out.aiThreshold>1)throw Error('AI判定値は0.5〜1にしてください');
   out.aiBodyLow=value.aiBodyLow??0.3;
   if(typeof out.aiBodyLow!=='number'||!Number.isFinite(out.aiBodyLow)||out.aiBodyLow<0||out.aiBodyLow>1)throw Error('本文追加判定の下限は0〜1にしてください');
-  out.aiConcurrency=value.aiConcurrency??3;
+  out.aiConcurrency=value.aiConcurrency??5;
   if(!Number.isSafeInteger(out.aiConcurrency)||out.aiConcurrency<1||out.aiConcurrency>20)throw Error('同時問い合わせ数は1〜20の整数にしてください');
   out.aiRequestLimit=value.aiRequestLimit??200;
   if(!Number.isSafeInteger(out.aiRequestLimit)||out.aiRequestLimit<1)throw Error('問い合わせ上限は1以上の整数にしてください');
