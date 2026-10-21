@@ -18,7 +18,7 @@ API キーは端末内の拡張機能ストレージに保存され、Chrome 同
 
 ## 導入
 
-Chrome Web Store で公開後、ここにリンクを掲載します。
+[Chrome Web Store](https://chromewebstore.google.com/detail/khglaaonfjfngjlfecbofoapgngafaod) からインストールできます。
 
 開発版を使う場合は、下記の手順でビルドし、`chrome://extensions` でデベロッパーモードを有効にして「パッケージ化されていない拡張機能を読み込む」から `dist/` を選びます。
 
