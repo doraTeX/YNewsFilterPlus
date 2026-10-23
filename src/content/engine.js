@@ -34,8 +34,10 @@ let aiMessage='AIは未設定です。', aiRequests=0, aiEpoch=0;
 let aiStatsElement=null, renderAIBreakdown=null;
 let aiBreakdown=Array.from({length:6},()=>new Map());
 function shortTag(word){const prefix=word.startsWith('AI: ')?'AI: ':'';const chars=Array.from(word.slice(prefix.length));return prefix+(chars.length>8?chars.slice(0,6).join('')+'…':chars.join(''));}
-function freshAIStats(){return {success:0,failed:0,input:0,output:0,unknown:0,lastError:'',traces:new Map(),systemError:'',acquired:new Set(),logged:new Map(),prior:0,fresh:0,uniquePrior:0,uniqueFresh:0,target:0,keyword:0,jevHidden:0,jevHighlighted:0,cached:0,pending:0};}
+function freshAIStats(){return {success:0,failed:0,refused:0,input:0,output:0,unknown:0,lastError:'',traces:new Map(),systemError:'',acquired:new Set(),logged:new Map(),prior:0,fresh:0,uniquePrior:0,uniqueFresh:0,target:0,keyword:0,jevHidden:0,jevHighlighted:0,cached:0,pending:0};}
 let aiStats=freshAIStats();
+// 回答拒否はこのタブ・設定世代内だけ保留し、ほかの記事を処理し続ける。
+const refusedArticles=new Map();
 // URL単位で保持し、キャッシュキーやDOMが変わっても表示の経過を追えるようにする。
 const displayTraces=new Map(),displayStates=new WeakMap();
 function traceDisplay(item,message){
@@ -61,7 +63,7 @@ function displayReason(el){
 function renderAIStats(){if(!aiStatsElement?.isConnected)return;
  const tokenText=aiStats.unknown?`確認できた入力 ${aiStats.input.toLocaleString()}／出力 ${aiStats.output.toLocaleString()}（使用量未取得 ${aiStats.unknown} 応答）`:`入力 ${aiStats.input.toLocaleString()}／出力 ${aiStats.output.toLocaleString()}`;
  const rows=[
-  ['問い合わせ試行',`${aiRequests} 回（成功 ${aiStats.success}／失敗 ${aiStats.failed}）`],
+  ['問い合わせ試行',`${aiRequests} 回（成功 ${aiStats.success}／失敗 ${aiStats.failed}／回答なし ${aiStats.refused}）`],
   ['トークン',tokenText],
   ['記事カード',`${aiStats.target} 件`],
   ['通常キーワードでの除外数',`${aiStats.keyword} 件`],
@@ -101,6 +103,7 @@ function traceAI(key,state,message){
 function pendingDetail(key,el,pending){
  const trace=aiStats.traces.get(key);let reason='';
  if(keywordHidden.has(el))reason='通常キーワードで除外済みのため、AIには問い合わせません。';
+ else if(refusedArticles.get(key)===aiEpoch)reason='回答なし。この記事の処理をスキップしました。';
  else if(pending){
   if(trace?.epoch===aiEpoch&&trace.state==='エラー')reason='この記事の処理でエラー：'+trace.message;
   else if(trace?.epoch===aiEpoch&&['見出し通信中','本文取得中','本文通信中'].includes(trace.state)&&aiRunning)reason=trace.state+'：応答を待っています。';
@@ -326,7 +329,7 @@ function jevSingleRequest(item,conditions,stage='headline',targets=conditions.ma
   const stats=aiStats,c=connection(aiLocal),identity=connectionIdentity(aiLocal);
   return new Promise((resolve,reject)=>{
     let settled=false;
-    const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(watchdog);if(error){stats.failed++;stats.lastError=error.message;reject(error);}else{stats.success++;resolve(value);}renderAIStats();};
+    const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(watchdog);if(error){if(error.kind==='refusal')stats.refused++;else{stats.failed++;stats.lastError=error.message;}reject(error);}else{stats.success++;resolve(value);}renderAIStats();};
     const watchdog=setTimeout(()=>finish(Object.assign(aiError(c.provider,'timeout'),{message:`AI通信の完了通知を${c.timeout/1000+5}秒以内に受け取れませんでした。拡張機能内の処理待ちや通信の停滞が考えられますが、原因は特定できていません。`})),c.timeout+5000);
     try{
       const request=GM.xmlHttpRequest({method:'POST',url:c.url,anonymous:true,timeout:c.timeout,connection:identity,
@@ -394,7 +397,7 @@ async function runAI(){
       if(keywordHidden.has(el))continue;
       const item=aiIdentity(el);if(!item)continue;
       const key=aiKey(item,allAIConditions()),n=allAIConditions().length;
-      if(seen.has(key))continue;seen.add(key);
+      if(seen.has(key)||refusedArticles.get(key)===epoch)continue;seen.add(key);
       if(validDecision(aiCache[key],n)&&(!wantsBody(aiCache[key],n)||bodyFinished(aiCache,key,n)))continue;
       queue.push(el);
     }
@@ -453,7 +456,11 @@ async function runAI(){
           aiStatus(`AI判定済み：キャッシュ ${Object.keys(aiCache).length} 件／このページの通信 ${aiRequests} 回`);
         }catch(e){
           if(epoch!==aiEpoch||page!==location.href)return;
-          traceAI(cacheKey,e.limit?'上限到達':'エラー',e.message||String(e));
+          traceAI(cacheKey,e.kind==='refusal'?'回答なし':e.limit?'上限到達':'エラー',e.kind==='refusal'?'この記事の処理をスキップしました。':e.message||String(e));
+          if(e.kind==='refusal'){
+            refusedArticles.set(cacheKey,epoch);
+            return;
+          }
           if(e.kind==='changed'){await loadAI();return;}
           if(e.limit){aiStatus(e.message);return;}
           await aiLock(async()=>{
@@ -474,7 +481,7 @@ async function runAI(){
     };
     if(navigator.locks?.request)await navigator.locks.request('yne-plus-jev-batch',batch);else await batch();
   }catch(e){aiStats.systemError=new Date().toISOString()+' · '+(e.message||String(e));aiStatus('AIの保存・読み込みに失敗しました。キーワード除外は継続します。');}
-  finally{aiRunning=false;renderAIProgress();if(epoch!==aiEpoch)schedule();inspectAITargets();if(!aiStats.pending&&!aiStats.lastError)aiStatus(aiStats.target?'確認完了。未判定の記事はありません（キャッシュまたはキーワード除外）。':'判定対象の記事カードが見つかりません。このページの構造には未対応の可能性があります。');}
+  finally{aiRunning=false;renderAIProgress();if(epoch!==aiEpoch)schedule();inspectAITargets();if([...refusedArticles.values()].includes(epoch)&&!aiLocal.stopped&&!aiStats.systemError)aiStatus('確認完了。');else if(!aiStats.pending&&!aiStats.lastError)aiStatus(aiStats.target?'確認完了。未判定の記事はありません（キャッシュまたはキーワード除外）。':'判定対象の記事カードが見つかりません。このページの構造には未対応の可能性があります。');}
 }
 function addAIUI({body,text,button,status,applySettings}){
   const container=text('details','',body);container.open=true;container.className='jev-section';
@@ -500,7 +507,7 @@ function addAIUI({body,text,button,status,applySettings}){
   const thresholdHint=text('span','関連すると判断する値（0.5〜1。初期値0.8）',thresholdRow,'hint');thresholdHint.style.margin='0';
   const threshold=text('input','',thresholdRow);threshold.style.cssText='width:80px;flex:0 0 80px;margin:0';threshold.type='number';threshold.min='0.5';threshold.max='1';threshold.step='0.01';threshold.value=String(config.aiThreshold);threshold.setAttribute('aria-label','AI除外の判定値');
   const progressLabel=text('label','',section),showProgress=document.createElement('input');showProgress.type='checkbox';showProgress.checked=config.aiShowProgress;showProgress.setAttribute('aria-label','AIの進捗ツールチップを表示する');progressLabel.append(showProgress,document.createTextNode('AIの進捗ツールチップを表示する'));
-  const label=text('label','',summary);label.className='jev-toggle';const enabled=document.createElement('input');enabled.type='checkbox';enabled.checked=config.aiEnabled;label.append(enabled,document.createTextNode('AIを有効にする'));enabled.setAttribute('aria-label','AIを有効にする');
+  const label=text('label','',summary);label.className='jev-toggle';const enabled=document.createElement('input');enabled.type='checkbox';enabled.checked=config.aiEnabled;label.append(enabled,document.createTextNode('AI判定を利用'));enabled.setAttribute('aria-label','AI判定を利用');
   label.addEventListener('click',e=>e.stopPropagation());label.addEventListener('keydown',e=>e.stopPropagation());
   function refreshEnabled(){for(const group of container.querySelectorAll('.jev-controls')){group.disabled=!enabled.checked;group.style.opacity=enabled.checked?'1':'.45';}}
   enabled.addEventListener('change',refreshEnabled);refreshEnabled();

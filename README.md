@@ -28,6 +28,8 @@ Clef・OpenAIでは「この接続先への通信を許可」を押し、ブラ�
 
 接続仕様：[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions)。
 
+Cloudflareの設定手順は [Clef / Clef-flash の設定ガイド](docs/CLOUDFLARE_SETUP.md) をご覧ください。
+
 ## 導入
 
 [Chrome Web Store](https://chromewebstore.google.com/detail/khglaaonfjfngjlfecbofoapgngafaod) からインストールできます。
@@ -41,7 +43,7 @@ Clef・OpenAIでは「この接続先への通信を許可」を押し、ブラ�
 3. 行末に `||` を付けると、その行だけの条件を指定できます。
    - `ABC||case:1`：大文字・小文字を区別する（`case:0` で区別しない）。
    - `単語||rate:90`：一致した 10 件のうち 9 件を除外する。`rate:90!` は先頭の 1 件を表示して残りを除外します。
-4. AI判定を使う場合は「AIによるハイライト/除外判定」を開き、「AIを有効にする」をオンにして接続先を設定し、興味のある／ないキーワードを入力します。
+4. AI判定を使う場合は「AIによるハイライト/除外判定」を開き、「AI判定を利用」をオンにして接続先を設定し、興味のある／ないキーワードを入力します。
 5. チップにマウスを載せると、現在非表示にしている語の一覧が出ます。語をクリックすると一時的に除外を解除できます。
 
 動作対象のドメインは `news.yahoo.co.jp`、`www.yahoo.co.jp`、`sports.yahoo.co.jp`、`baseball.yahoo.co.jp`、`soccer.yahoo.co.jp`、`keiba.yahoo.co.jp` です。

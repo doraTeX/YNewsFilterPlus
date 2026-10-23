@@ -35,3 +35,8 @@ it.each(['nano','ollaya'])('廃止した%s設定から別APIへ勝手に送ら�
  expect(migrateRetiredAI(migrated)).toBe(migrated);
  const active=migrateRetiredAI({...local,provider:'openai'});expect(active.provider).toBe('openai');expect(active.stopped).toBeUndefined();
 });
+
+it('旧版で回答拒否により全体停止した設定を再開できる状態に移行する',()=>{
+ const local={provider:'openai',profiles:{openai:{key:'saved'}},stopped:true,failures:1,blockedUntil:123,errorKind:'refusal',lastError:'回答拒否'};
+ expect(migrateRetiredAI(local)).toMatchObject({provider:'openai',profiles:{openai:{key:'saved'}},stopped:false,failures:0,blockedUntil:0,errorKind:'',lastError:''});
+});

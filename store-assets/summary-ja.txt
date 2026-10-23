@@ -1,0 +1,1 @@
+Yahoo!ニュースの記事を、キーワードやAIによる関連性判定でハイライト・除外します。Jev、OpenAI Decisions、Cloudflare Clef対応。Yahoo! JAPAN非公式の拡張です。

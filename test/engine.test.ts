@@ -232,8 +232,7 @@ it.each([
 });
 it.each([
  ['null','format'],
- [JSON.stringify({answers:[{name:'q0',type:'refusal'}]}),'refusal'],
-] as const)('OpenAIの不正応答・拒否をキャッシュせず停止する (%s)',async(responseText,kind)=>{
+] as const)('OpenAIの不正応答をキャッシュせず停止する (%s)',async(responseText,kind)=>{
  Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiConditions:['科学']});
  store.yne_plus_jev_local_v1={provider:'openai',profiles:{openai:{key:'test'}}};
  await boot();await vi.advanceTimersByTimeAsync(1000);
@@ -376,4 +375,26 @@ it('キャッシュ消去は確認し、キャンセルなら保持、承認な�
  button.click();await vi.advanceTimersByTimeAsync(1);
  expect(store.yne_plus_jev_cache_v1).toEqual({});
  expect(root.textContent).toContain('判定キャッシュを消去しました。');expect(button.disabled).toBe(false);
+});
+
+it('回答拒否が5件以上でも警告や停止を出さず、ほかの記事を判定し同じ拒否を自動再送しない',async()=>{
+ document.body.innerHTML='<main><ul>'+Array.from({length:7},(_,i)=>`<li><a href="https://news.yahoo.co.jp/articles/article-${i}">科学の記事${i}</a></li>`).join('')+'</ul></main>';
+ Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiInterests:['科学'],aiConcurrency:1});
+ store.yne_plus_jev_local_v1={provider:'openai',profiles:{openai:{key:'test'}}};
+ const copy=vi.fn();await boot({}, {setClipboard:copy});await vi.advanceTimersByTimeAsync(1000);
+ for(let i=0;i<7;i++){
+  expect(requests).toHaveLength(i+1);
+  requests[i].onload({status:200,responseText:JSON.stringify({answers:[i<6?{name:'q0',type:'refusal'}:{name:'q0',type:'predicate',probability:.95}]})});
+  await vi.advanceTimersByTimeAsync(100);
+ }
+ expect(document.querySelectorAll('[data-yne-plus-highlight]')).toHaveLength(1);
+ expect(store.yne_plus_jev_local_v1.stopped).not.toBe(true);expect(store.yne_plus_jev_local_v1.failures||0).toBe(0);
+ expect(document.querySelector('#yne-plus-error-dialog')).toBeNull();
+ expect(root.querySelector<HTMLElement>('.jev-section')!.style.backgroundColor).toBe('');
+ expect(root.textContent).toContain('失敗 0／回答なし 6');
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();await vi.advanceTimersByTimeAsync(1);
+ expect(copy.mock.calls.at(-1)![0]).toContain('回答なし。この記事の処理をスキップしました。');
+ window.dispatchEvent(new Event('focus'));await vi.advanceTimersByTimeAsync(5000);
+ expect(requests).toHaveLength(7);
+ expect(Object.keys(store.yne_plus_jev_cache_v1||{})).toHaveLength(1);
 });

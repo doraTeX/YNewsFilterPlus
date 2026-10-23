@@ -51,6 +51,7 @@ export function readDecision(c,raw,targets){
 // Retired experimental provider: keep other credentials, and never silently switch to a paid API.
 /** @param {Record<string, any>} local */
 export function migrateRetiredAI(local={}){
+ if(local.errorKind==='refusal')local={...local,stopped:false,failures:0,blockedUntil:0,lastError:'',lastErrorAt:'',errorKind:'',errorAdvice:'',errorFocusKey:false,errorProvider:''};
  const retired=['nano','ollaya'];
  if(!retired.includes(local.provider)&&!retired.some(id=>Object.hasOwn(local.profiles||{},id)))return local;
  const profiles={...local.profiles};for(const id of retired)delete profiles[id];

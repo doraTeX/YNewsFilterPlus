@@ -29,7 +29,7 @@ export function aiError(provider,kind,{status=0,code='',phase='判定'}={}){
   message=`${name}の${phase}${kind==='timeout'?'が時間切れになりました。':'に接続できませんでした。'}`;
   advice=`${name}へのネットワーク接続とブラウザの接続許可を確認してください。一時的な失敗なら待機後に再試行します。`;
  }else if(kind==='refusal'){
-  stop=true;message='OpenAIが判定への回答を拒否しました。';advice='判定条件や記事内容により回答できない場合があります。拒否を「無関係」とは扱いません。条件を見直してから再試行してください。';
+  message='OpenAIがこの記事の判定への回答を拒否しました。';advice='この記事の処理をエラーとして記録し、ほかの記事の判定を続けます。';
  }else if(kind==='provider'){
   stop=true;message=`${name}が${phase}の失敗を返しました。`;advice='HTTP通信は成功しましたが、API内の処理は失敗しました。接続先の設定・利用状況を確認して再試行してください。';
  }else if(kind==='changed'){
@@ -47,7 +47,7 @@ export function httpError(provider,status,responseText,phase='判定'){
 }
 export function failureState(old,error,now=Date.now()){
  // Concurrent requests must not undo a terminal failure or replace its actionable cause.
- if(old.stopped)return old;
+ if(error.kind==='refusal'||old.stopped)return old;
  const failures=(old.failures||0)+1,seconds=Number(error.retry);
  const retry=error.retry&&Number.isFinite(seconds)?Math.max(0,seconds*1000):Math.max(0,Date.parse(error.retry||'')-now)||0;
  return {...old,failures,stopped:!!error.stop||failures>=5,blockedUntil:now+Math.max(60000*Math.min(30,2**failures),retry),lastError:error.message,lastErrorAt:new Date(now).toISOString(),errorKind:error.kind||'',errorProvider:error.provider||old.provider||'jev',errorAdvice:error.advice||'',errorFocusKey:!!error.focusKey};

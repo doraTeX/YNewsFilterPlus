@@ -26,7 +26,7 @@ it('JSON null・欠落・範囲外を判定値として受け入れず、拒否�
  for(const raw of [null,[],{}, {answers:[null]}, {answers:[{name:'q0',type:'predicate',probability:'0.8'}]}]){
   try{readDecision(c,raw,[0]);expect.unreachable();}catch(e:any){expect(e.kind).toBe('format');}
  }
- try{readDecision(c,{answers:[{name:'q0',type:'refusal'}]},[0]);expect.unreachable();}catch(e:any){expect(e.kind).toBe('refusal');expect(e.stop).toBe(true);}
+ try{readDecision(c,{answers:[{name:'q0',type:'refusal'}]},[0]);expect.unreachable();}catch(e:any){expect(e.kind).toBe('refusal');expect(e.stop).toBe(false);}
  const cf=connection({provider:'clef',profiles:{clef:{accountId:'a'.repeat(32)}}});
  try{readDecision(cf,{success:false},[0]);expect.unreachable();}catch(e:any){expect(e.kind).toBe('provider');}
 });
@@ -34,4 +34,9 @@ it('並行通信の遅れた失敗が認証エラーの停止を解除しない'
  const terminal=failureState({},httpError('clef',403,''));
  const late=failureState(terminal,aiError('clef','timeout'));
  expect(late.stopped).toBe(true);expect(late.lastError).toContain('HTTP 403');expect(late.errorFocusKey).toBe(true);
+});
+
+it('回答拒否を繰り返しても全体の停止・待機・連続通信失敗回数に加算しない',()=>{
+ const old={failures:4,blockedUntil:0};
+ expect(failureState(old,aiError('openai','refusal'))).toBe(old);
 });
