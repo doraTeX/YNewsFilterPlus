@@ -29,5 +29,5 @@ it('通信のAbortと巨大な応答を区別する',async()=>{
  fetch.mockImplementationOnce((_url,options)=>new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')))));
  await expect(fetchResult('https://api.openai.com',{},1,'openai')).rejects.toMatchObject({kind:'timeout'});
  fetch.mockResolvedValueOnce({status:200,text:async()=>'x'.repeat(6000001)});
- await expect(fetchResult('https://api.openai.com',{},100,'openai')).rejects.toMatchObject({kind:'size',stop:true});
+ await expect(fetchResult('https://api.openai.com',{},100,'openai')).rejects.toMatchObject({kind:'size',stop:false,scope:'article'});
 });

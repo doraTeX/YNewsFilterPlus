@@ -36,8 +36,8 @@ let aiBreakdown=Array.from({length:6},()=>new Map());
 function shortTag(word){const prefix=word.startsWith('AI: ')?'AI: ':'';const chars=Array.from(word.slice(prefix.length));return prefix+(chars.length>8?chars.slice(0,6).join('')+'…':chars.join(''));}
 function freshAIStats(){return {success:0,failed:0,refused:0,input:0,output:0,unknown:0,lastError:'',traces:new Map(),systemError:'',acquired:new Set(),logged:new Map(),prior:0,fresh:0,uniquePrior:0,uniqueFresh:0,target:0,keyword:0,jevHidden:0,jevHighlighted:0,cached:0,pending:0};}
 let aiStats=freshAIStats();
-// 回答拒否はこのタブ・設定世代内だけ保留し、ほかの記事を処理し続ける。
-const refusedArticles=new Map();
+// 記事単位の失敗はこのタブ・設定世代内だけ保留し、ほかの記事を処理し続ける。
+const skippedArticles=new Map();
 // URL単位で保持し、キャッシュキーやDOMが変わっても表示の経過を追えるようにする。
 const displayTraces=new Map(),displayStates=new WeakMap();
 function traceDisplay(item,message){
@@ -103,7 +103,7 @@ function traceAI(key,state,message){
 function pendingDetail(key,el,pending){
  const trace=aiStats.traces.get(key);let reason='';
  if(keywordHidden.has(el))reason='通常キーワードで除外済みのため、AIには問い合わせません。';
- else if(refusedArticles.get(key)===aiEpoch)reason='回答なし。この記事の処理をスキップしました。';
+ else if(skippedArticles.get(key)===aiEpoch)reason=trace?.state==='回答なし'?'回答なし。この記事の処理をスキップしました。':'この記事の処理をスキップしました。'+(trace?.message||'');
  else if(pending){
   if(trace?.epoch===aiEpoch&&trace.state==='エラー')reason='この記事の処理でエラー：'+trace.message;
   else if(trace?.epoch===aiEpoch&&['見出し通信中','本文取得中','本文通信中'].includes(trace.state)&&aiRunning)reason=trace.state+'：応答を待っています。';
@@ -397,7 +397,7 @@ async function runAI(){
       if(keywordHidden.has(el))continue;
       const item=aiIdentity(el);if(!item)continue;
       const key=aiKey(item,allAIConditions()),n=allAIConditions().length;
-      if(seen.has(key)||refusedArticles.get(key)===epoch)continue;seen.add(key);
+      if(seen.has(key)||skippedArticles.get(key)===epoch)continue;seen.add(key);
       if(validDecision(aiCache[key],n)&&(!wantsBody(aiCache[key],n)||bodyFinished(aiCache,key,n)))continue;
       queue.push(el);
     }
@@ -457,8 +457,8 @@ async function runAI(){
         }catch(e){
           if(epoch!==aiEpoch||page!==location.href)return;
           traceAI(cacheKey,e.kind==='refusal'?'回答なし':e.limit?'上限到達':'エラー',e.kind==='refusal'?'この記事の処理をスキップしました。':e.message||String(e));
-          if(e.kind==='refusal'){
-            refusedArticles.set(cacheKey,epoch);
+          if(e.scope==='article'||e.kind==='refusal'){
+            skippedArticles.set(cacheKey,epoch);
             return;
           }
           if(e.kind==='changed'){await loadAI();return;}
@@ -481,7 +481,7 @@ async function runAI(){
     };
     if(navigator.locks?.request)await navigator.locks.request('yne-plus-jev-batch',batch);else await batch();
   }catch(e){aiStats.systemError=new Date().toISOString()+' · '+(e.message||String(e));aiStatus('AIの保存・読み込みに失敗しました。キーワード除外は継続します。');}
-  finally{aiRunning=false;renderAIProgress();if(epoch!==aiEpoch)schedule();inspectAITargets();if([...refusedArticles.values()].includes(epoch)&&!aiLocal.stopped&&!aiStats.systemError)aiStatus('確認完了。');else if(!aiStats.pending&&!aiStats.lastError)aiStatus(aiStats.target?'確認完了。未判定の記事はありません（キャッシュまたはキーワード除外）。':'判定対象の記事カードが見つかりません。このページの構造には未対応の可能性があります。');}
+  finally{aiRunning=false;renderAIProgress();if(epoch!==aiEpoch)schedule();inspectAITargets();if([...skippedArticles.values()].includes(epoch)&&!aiLocal.stopped&&!aiStats.systemError)aiStatus('確認完了。');else if(!aiStats.pending&&!aiStats.lastError)aiStatus(aiStats.target?'確認完了。未判定の記事はありません（キャッシュまたはキーワード除外）。':'判定対象の記事カードが見つかりません。このページの構造には未対応の可能性があります。');}
 }
 function addAIUI({body,text,button,status,applySettings}){
   const container=text('details','',body);container.open=true;container.className='jev-section';

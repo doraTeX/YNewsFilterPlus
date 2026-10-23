@@ -44,7 +44,7 @@ async function handle(m:any,sender:chrome.runtime.MessageSender){
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
  if(!allowed(sender))return false;
- void handle(message,sender).then(value=>respond({ok:true,value}),e=>respond({ok:false,details:{provider:e?.provider,kind:e?.kind,status:e?.status,stop:e?.stop,advice:e?.advice,focusKey:e?.focusKey},error:e?.name==='AbortError'?'timeout':e instanceof Error?e.message:'処理に失敗しました'}));return true;
+ void handle(message,sender).then(value=>respond({ok:true,value}),e=>respond({ok:false,details:{provider:e?.provider,kind:e?.kind,status:e?.status,stop:e?.stop,advice:e?.advice,focusKey:e?.focusKey,scope:e?.scope},error:e?.name==='AbortError'?'timeout':e instanceof Error?e.message:'処理に失敗しました'}));return true;
 });
 
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='loading'){void chrome.action.setBadgeText({tabId,text:''}).catch(()=>{});void chrome.action.setTitle({tabId,title:'Y!News Filter Plus'}).catch(()=>{});}});

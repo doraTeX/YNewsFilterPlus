@@ -146,14 +146,14 @@ it.each(['chip','toolbar'])('通信エラーでも%s経由で閉じた後に設�
  Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
  store.yne_plus_jev_local_v1={key:'test-key'};
  await boot();await vi.advanceTimersByTimeAsync(1000);
- for(const request of requests)request.ontimeout();
+ for(const request of requests)request.onerror({});
  await vi.advanceTimersByTimeAsync(1000);
  document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.close();
  if(source==='chip')document.getElementById('yne-plus-badge')!.click();
  else menus['Y!News Filter Plus 設定']();
  const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-error-dialog')!;
  const content=dialog.firstElementChild!.shadowRoot!;
- expect(content.textContent).toContain('時間切れ');
+ expect(content.textContent).toContain('接続できません');
  const close=content.querySelector<HTMLButtonElement>('button')!;
  expect(close.textContent).toBe('閉じて設定を開く');close.click();
  expect(document.querySelector('#yne-plus-error-dialog')).toBeNull();
@@ -179,9 +179,10 @@ it('完了通知が来ない場合は権限不足と断定せず35秒で終了�
  Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
  store.yne_plus_jev_local_v1={key:'test-key'};
  await boot();await vi.advanceTimersByTimeAsync(36000);
- expect(store.yne_plus_jev_local_v1.lastError).toContain('完了通知を35秒以内');
- expect(store.yne_plus_jev_local_v1.lastError).toContain('原因は特定できていません');
- expect(store.yne_plus_jev_local_v1.lastError).not.toContain('接続許可を確認');
+ expect(root.textContent).toContain('完了通知を35秒以内');
+ expect(root.textContent).toContain('原因は特定できていません');
+ expect(store.yne_plus_jev_local_v1.lastError).toBeUndefined();
+ expect(store.yne_plus_jev_local_v1.stopped).not.toBe(true);
 });
 
 
@@ -229,16 +230,6 @@ it.each([
  const content=document.querySelector('#yne-plus-error-dialog')!.firstElementChild!.shadowRoot!;
  expect(content.textContent).toContain(advice);
  expect(content.querySelector('button')!.textContent).toBe(focusKey?'閉じてAPIキーを設定':'閉じて設定を開く');
-});
-it.each([
- ['null','format'],
-] as const)('OpenAIの不正応答をキャッシュせず停止する (%s)',async(responseText,kind)=>{
- Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiConditions:['科学']});
- store.yne_plus_jev_local_v1={provider:'openai',profiles:{openai:{key:'test'}}};
- await boot();await vi.advanceTimersByTimeAsync(1000);
- for(const request of requests)request.onload({status:200,responseText});await vi.advanceTimersByTimeAsync(100);
- expect(store.yne_plus_jev_local_v1.errorKind).toBe(kind);expect(store.yne_plus_jev_local_v1.stopped).toBe(true);
- expect(Object.keys(store.yne_plus_jev_cache_v1||{})).toHaveLength(0);expect(document.querySelectorAll('[data-yne-plus-hidden]')).toHaveLength(0);
 });
 
 it('遅れて完了したキャッシュ読み込みが新しいハイライトを取り消さない',async()=>{
@@ -397,4 +388,29 @@ it('回答拒否が5件以上でも警告や停止を出さず、ほかの記事
  window.dispatchEvent(new Event('focus'));await vi.advanceTimersByTimeAsync(5000);
  expect(requests).toHaveLength(7);
  expect(Object.keys(store.yne_plus_jev_cache_v1||{})).toHaveLength(1);
+});
+
+it.each(['jev','openai','clef'])('%sの記事単位の失敗は警告・全体待機なしで続行する',async(provider)=>{
+ Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiInterests:['科学'],aiConcurrency:1});
+ store.yne_plus_jev_local_v1={provider,profiles:{[provider]:{key:'test',accountId:'a'.repeat(32)}}};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ expect(requests).toHaveLength(1);
+ requests[0].onload({status:413,responseText:'{}'});await vi.advanceTimersByTimeAsync(100);
+ expect(requests).toHaveLength(2);
+ const answers=provider==='openai'?[{name:'q0',type:'predicate',probability:.95}]:{q0:{noul:.95}};
+ requests[1].onload({status:200,responseText:JSON.stringify(provider==='clef'?{success:true,result:{answers}}:{answers})});await vi.advanceTimersByTimeAsync(100);
+ expect(document.querySelectorAll('[data-yne-plus-highlight]')).toHaveLength(1);
+ expect(store.yne_plus_jev_local_v1.stopped).not.toBe(true);expect(store.yne_plus_jev_local_v1.blockedUntil||0).toBe(0);
+ expect(document.querySelector('#yne-plus-error-dialog')).toBeNull();
+ expect(root.querySelector<HTMLElement>('.jev-section')!.style.backgroundColor).toBe('');
+ window.dispatchEvent(new Event('focus'));await vi.advanceTimersByTimeAsync(5000);expect(requests).toHaveLength(2);
+});
+
+it.each(['jev','openai','clef'])('%sの認証失敗は全体を停止する',async(provider)=>{
+ Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiInterests:['科学'],aiConcurrency:1});
+ store.yne_plus_jev_local_v1={provider,profiles:{[provider]:{key:'test',accountId:'a'.repeat(32)}}};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ requests[0].onload({status:401,responseText:'{}'});await vi.advanceTimersByTimeAsync(1000);
+ expect(requests).toHaveLength(1);expect(store.yne_plus_jev_local_v1.stopped).toBe(true);
+ expect(root.querySelector<HTMLElement>('.jev-section')!.style.backgroundColor).not.toBe('');
 });

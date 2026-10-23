@@ -37,7 +37,11 @@ export function readDecision(c,raw,targets){
  if(c.provider==='clef'&&Object.hasOwn(raw,'success')){if(raw.success!==true)throw aiError(c.provider,'provider');data=raw.result;}
  if(!data||typeof data!=='object')throw aiError(c.provider,'format');
  const scores=targets.map(i=>{
-  if(c.provider!=='openai')return data.answers?.['q'+i]?.noul;
+  if(c.provider!=='openai'){
+   const answer=data.answers?.['q'+i];
+   if(answer?.type==='refusal')throw aiError(c.provider,'refusal');
+   return answer?.noul;
+  }
   const matches=Array.isArray(data.answers)?data.answers.filter(a=>a?.name==='q'+i):[];
   if(matches.length!==1)throw aiError(c.provider,'format');
   if(matches[0].type==='refusal')throw aiError(c.provider,'refusal');
