@@ -12,28 +12,27 @@ Yahoo!ニュースの記事一覧を、キーワード、または AIによる�
 
 ## AI判定の接続先
 
-AI判定は任意の機能で、**初期状態では無効**です。次の4種類に対応します。「カスタムAPI」は用意していません。
+AI判定は任意の機能で、**初期状態では無効**です。次の3種類の接続先に対応します。
 
 | 接続先 | 必要な設定 |
 | --- | --- |
 | Jev（初期値） | TypeSafeのAPIキーのみ。既存のキーを引き継ぎます |
-| Cloudflare Clef | CloudflareアカウントID、Workers AI権限のあるAPIトークン、Clef／Clef Flashの選択 |
 | OpenAI Decisions | OpenAI APIキー。モデルは `gpt-6-luna` |
-| Ollaya（ローカル） | サーバーURLとモデル選択。APIキー欄はありません |
+| Cloudflare Clef / Clef-flash | CloudflareアカウントID、Workers AI権限のあるAPIトークン、モデルの選択 |
 
-Clef・OpenAIでは「この接続先への通信を許可」を押し、ブラウザの権限を許可してください。Ollayaでは「モデル一覧を取得」から接続先を許可し、ダウンロード済みモデルを選びます。初期URLは `http://localhost:11435` ですが、ポートやホストを変更できます。Ollaya本体の起動・モデルのダウンロードは別途必要です。サーバーURLを変更したらモデル一覧を再取得してください。Ollayaの推論は最大120秒、クラウドAPIは30秒待ちます。
+Clef・OpenAIでは「この接続先への通信を許可」を押し、ブラウザの権限を許可してください。APIの応答は最大30秒待ちます。
 
-接続先・モデル・URL・APIキーは端末内に保存し、Chrome同期や設定JSONには含めません。キーは接続先ごとに保存し、Ollayaには認証ヘッダーを送りません。キャッシュも接続先とモデルで分離します。モデルを変えた場合は判定値の傾向を確認し、必要に応じてしきい値を調整してください。
+接続先・モデル・URL・APIキーは端末内に保存し、Chrome同期や設定JSONには含めません。キーは接続先ごとに保存します。キャッシュも接続先とモデルで分離します。モデルを変えた場合は判定値の傾向を確認し、必要に応じてしきい値を調整してください。
 
 有効にすると記事の見出し（本文追加判定を有効にした場合は本文冒頭も）と判定条件を選択した接続先へ送信します。キーを変更すると、短い「接続確認」の判定要求を送ります。**クラウドAPIの料金は利用者と接続先のサービスとの契約に基づいて発生します。** 本拡張の開発者は料金を受け取らず、APIキーや判定内容を取得しません。詳細は[プライバシーポリシー](docs/PRIVACY_POLICY.md)をご覧ください。
 
-接続仕様：[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions)、[Ollaya](https://github.com/ollaya-dev/ollaya/blob/main/docs/api.md)。
+接続仕様：[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions)。
 
 ## 導入
 
 [Chrome Web Store](https://chromewebstore.google.com/detail/khglaaonfjfngjlfecbofoapgngafaod) からインストールできます。
 
-開発版を使う場合は、下記の手順でビルドし、`chrome://extensions` でデベロッパーモードを有効にして「パッケージ化されていない拡張機能を読み込む」から `dist/` を選びます。
+開発版を使う場合は、`npm run build:extension` でビルドし、`chrome://extensions` でデベロッパーモードを有効にして「パッケージ化されていない拡張機能を読み込む」から `dist/` を選びます。
 
 ## 使い方
 
@@ -42,7 +41,7 @@ Clef・OpenAIでは「この接続先への通信を許可」を押し、ブラ�
 3. 行末に `||` を付けると、その行だけの条件を指定できます。
    - `ABC||case:1`：大文字・小文字を区別する（`case:0` で区別しない）。
    - `単語||rate:90`：一致した 10 件のうち 9 件を除外する。`rate:90!` は先頭の 1 件を表示して残りを除外します。
-4. AI判定を使う場合は「意味によるハイライト/除外判定」を開き、「AIを有効にする」をオンにして接続先を設定し、興味のある／ないキーワードを入力します。
+4. AI判定を使う場合は「AIによるハイライト/除外判定」を開き、「AIを有効にする」をオンにして接続先を設定し、興味のある／ないキーワードを入力します。
 5. チップにマウスを載せると、現在非表示にしている語の一覧が出ます。語をクリックすると一時的に除外を解除できます。
 
 動作対象のドメインは `news.yahoo.co.jp`、`www.yahoo.co.jp`、`sports.yahoo.co.jp`、`baseball.yahoo.co.jp`、`soccer.yahoo.co.jp`、`keiba.yahoo.co.jp` です。
@@ -84,7 +83,7 @@ npm run package
 
 ## プライバシー
 
-本拡張は開発者のサーバーを持たず、利用者のデータを開発者や広告・解析事業者へ送信しません。通信先は Yahoo! JAPAN の上記ドメインと、利用者が設定・選択したAI接続先（TypeSafe・Cloudflare・OpenAI・Ollaya）です。詳細は [docs/PRIVACY_POLICY.md](docs/PRIVACY_POLICY.md) をご覧ください。
+本拡張は開発者のサーバーを持たず、利用者のデータを開発者や広告・解析事業者へ送信しません。通信先は Yahoo! JAPAN の上記ドメインと、利用者が設定・選択したAI接続先（TypeSafe・Cloudflare・OpenAI）です。詳細は [docs/PRIVACY_POLICY.md](docs/PRIVACY_POLICY.md) をご覧ください。
 
 ## 原作
 
@@ -93,3 +92,7 @@ npm run package
 ## ライセンス
 
 追加実装は [MIT ライセンス](LICENSE)です。原作由来のコードは ISC ライセンスに従い、著作権表示とライセンス全文を [THIRD_PARTY_NOTICES.txt](public/THIRD_PARTY_NOTICES.txt) に保持し、配布 ZIP にも同梱します。本プロジェクトは Yahoo! JAPAN とは無関係な非公式品であり、原作の公式後継製品でもありません。
+
+### 使用中の開発版を保護するビルド
+
+`npm run build` は検証用の `.build-check/` に出力し、Chromeで読み込み中の `dist/` は変更しません。パッケージ作成も検証用出力を使用します。開発版を更新する時だけ `npm run build:extension` を実行し、その後 `chrome://extensions` で拡張を再読み込みしてからニュースページを再読み込みしてください。使用中の `dist/` を更新すると、Chromeが記憶している旧ファイル名と食い違い、ページの再読み込みだけでは起動しないことがあります。

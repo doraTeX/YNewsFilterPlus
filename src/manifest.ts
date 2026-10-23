@@ -12,6 +12,6 @@ export default defineManifest({
  background:{service_worker:'src/background/index.ts',type:'module'},
  content_scripts:[{matches:yahooMatches,js:['src/content/index.ts'],run_at:'document_idle'}],
  permissions:['storage','alarms','clipboardWrite'],
- optional_host_permissions:['http://*/*','https://*/*'],
+ optional_host_permissions:['https://api.cloudflare.com/*','https://api.openai.com/*'],
  host_permissions:[...yahooMatches,'https://api.typesafe.ai/*']
 });

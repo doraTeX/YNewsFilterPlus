@@ -1,6 +1,6 @@
 import {aiError,httpError,failureState} from '../shared/ai-errors.js';
 import {defaults,validate,normalize,parseRows,shouldHide,cleanRows} from '../shared/settings.js';
-import {connection,connectionReady,connectionIdentity,profileOf,requestBody,readDecision} from '../shared/ai.js';
+import {PROVIDERS,providerOf,connection,connectionReady,connectionIdentity,profileOf,requestBody,readDecision} from '../shared/ai.js';
 import {connectionUI} from './ai-settings.js';
 import {TARGETS} from './selectors.js';
 export async function startEngine(GM,bridge){
@@ -119,7 +119,7 @@ function decisionRows(){
  for(const el of candidates()){
   const item=aiIdentity(el);if(!item)continue;
   if(keywordHidden.has(el)){
-   rows.push({記事:item.content,URL:item.url,条件:keywordMatches.get(el)||'',判定用途:'通常キーワード',見出しNoul:null,本文Noul:null,
+   rows.push({記事:item.content,URL:item.url,条件:keywordMatches.get(el)||'',判定用途:'通常キーワード',利用AI:'不使用（通常キーワード）',見出しNoul:null,本文Noul:null,
     本文判定に送信したテキスト:'本文判定なし',キーワード除外:true,採用:'通常キーワード',取得元:'通常キーワード照合',
     しきい値:null,追加判定下限:null,追加判定上限:null,条件判定:'キーワード除外',一時解除:false,記事表示:'非表示',本文取得失敗:false,AI有効:false,
     処理エラー:false,判定状況の詳細:'通常キーワードで除外済みのため、AIには問い合わせません。',最終処理時刻:'対象外',処理ログ:'通常キーワード「'+(keywordMatches.get(el)||'')+'」に一致して除外。AI判定は省略。'});
@@ -127,10 +127,12 @@ function decisionRows(){
   }
   const key=aiKey(item,allAIConditions()),n=allAIConditions().length,head=aiCache[key],body=aiCache[bodyCacheKey(key)],entry=finalDecision(aiCache,key,n);
   const hasHead=validDecision(head,n),hasBody=validDecision(body,n);
+  // キャッシュキーに接続先とモデルを含むため、取得済みの値もこのAIによる判定に限られる。
+  const aiLabel=PROVIDERS[providerOf(aiLocal)]+' / '+(profileOf(aiLocal).model||'モデル未設定');
   for(let i=0;i<n;i++){
    const useBody=bodyApplied(aiCache,key,n,i),usedKey=useBody?bodyCacheKey(key):key;
    const condition=allAIConditions()[i],score=validDecision(entry,n)?entry.scores[i]:null;
-   rows.push({...pendingDetail(key,el,score===null||(!useBody&&bodyTargets(head,n).includes(i)&&!bodyFinished(aiCache,key,n))),記事:item.content,URL:item.url,条件:condition,判定用途:isExclusionIndex(i)?'除外':'ハイライト',見出しNoul:hasHead?head.scores[i]:null,本文Noul:hasBody&&body.bodyIndices?.includes(i)?body.scores[i]:null,
+   rows.push({...pendingDetail(key,el,score===null||(!useBody&&bodyTargets(head,n).includes(i)&&!bodyFinished(aiCache,key,n))),記事:item.content,URL:item.url,条件:condition,判定用途:isExclusionIndex(i)?'除外':'ハイライト',利用AI:score===null?aiLabel+'（未判定）':aiLabel,見出しNoul:hasHead?head.scores[i]:null,本文Noul:hasBody&&body.bodyIndices?.includes(i)?body.scores[i]:null,
     本文判定に送信したテキスト:hasBody&&body.bodyIndices?.includes(i)?(typeof body.sentText==='string'?body.sentText:'旧キャッシュ：送信テキストの記録なし'):'本文判定なし',
     キーワード除外:keywordHidden.has(el),
     採用:keywordHidden.has(el)?'キーワード除外（AIは不使用）':useBody?'本文':hasHead?'見出し':'未判定',取得元:score===null?'未取得':aiStats.acquired.has(usedKey)?'このページでAPI取得':'保存済みキャッシュ',
@@ -158,16 +160,16 @@ function decisionReportHTML(rows){
   const highlightNegative=r.判定用途==='ハイライト'&&r.採用==='本文'&&r.条件判定==='非ハイライト';
   const scoreCell=(value,stage)=>decisive&&r.採用===stage?`<td><strong class="decisive-score" title="除外判定に採用した値">${escape(value)}</strong></td>`:cell(value);
   const rowClass=keywordExcluded?'keyword-excluded-row':errorRow?'error-row':pendingRow?'pending-row':decisive?'excluded-row':bodyNegative?'body-negative-row':highlightPositive?'highlight-row':highlightNegative?'highlight-negative-row':'other-row';filterCounts.set(rowClass,(filterCounts.get(rowClass)||0)+1);
-  return `<tr class="${rowClass}">${cell(i)}<td class="article">${article}</td>${cell(r.条件+'（'+r.判定用途+'）')}${scoreCell(r.見出しNoul,'見出し')}${scoreCell(r.本文Noul,'本文')}${cell(r.しきい値)}${cell(r.採用)}<td><span class="tag ${keywordExcluded?'keyword-excluded':r.条件判定==='除外対象'?'excluded':''}">${escape(r.条件判定)}</span></td><td><strong>${escape(r.記事表示)}</strong></td><td class="detail">${details}</td></tr>`;
+  return `<tr class="${rowClass}">${cell(i)}<td class="article">${article}</td>${cell(r.条件+'（'+r.判定用途+'）')}${cell(r.利用AI)}${scoreCell(r.見出しNoul,'見出し')}${scoreCell(r.本文Noul,'本文')}${cell(r.しきい値)}${cell(r.採用)}<td><span class="tag ${keywordExcluded?'keyword-excluded':r.条件判定==='除外対象'?'excluded':''}">${escape(r.条件判定)}</span></td><td><strong>${escape(r.記事表示)}</strong></td><td class="detail">${details}</td></tr>`;
  }).join('');
  const filters=[['keyword-excluded-row','キーワード除外','#e2e3ef'],['excluded-row','除外','#fff0f3'],['body-negative-row','本文で非除外','#edf8ef'],['highlight-row','ハイライト','#fff3bf'],['highlight-negative-row','本文で非ハイライト','#eadcf8'],['pending-row','未取得','#d9f2f5'],['error-row','エラー','#ffdfbd'],['other-row','通常表示','#e9eff5']];
  const controls=filters.map(([kind,label,color])=>`<label class="tag filter-label" style="background:${color}"><input type="checkbox" data-filter="${kind}" checked> ${label} (${filterCounts.get(kind)||0})</label>`).join(' ');
  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI判定詳細 — Y!News Filter Plus</title><style>
  .filter-guide{grid-template-columns:max-content 1fr;gap:8px 16px;margin:16px 0 24px;color:#52657a}.filter-guide dt{font-weight:600}.filter-guide dd{align-self:center} [hidden]{display:none!important}.filter-actions{flex-basis:100%;display:flex;gap:10px;margin-bottom:4px}.filter-actions button{font:600 14px/1.4 system-ui;padding:7px 12px;border:1px solid #98abc0;border-radius:7px;background:white;color:#203c59;cursor:pointer}.filter-actions button:hover{background:#e5edf7}.filter-actions button:focus-visible{outline:2px solid #1768bd;outline-offset:2px}.filters{border:0;padding:0;margin:14px 0;display:flex;flex-wrap:wrap;gap:8px}.filters legend{font-weight:600;margin-bottom:8px}.filter-label{cursor:pointer}.filter-label input{accent-color:#1768bd;vertical-align:middle}.filter-label:focus-within{outline:2px solid #1768bd;outline-offset:2px} *{box-sizing:border-box}body{margin:0;padding:24px;font:14px/1.6 system-ui,sans-serif;color:#172b42;background:#f5f8fc}h1{font-size:24px;margin:0 0 8px}p{color:#52657a}a{color:#1768bd;text-decoration:none}a:hover{text-decoration:underline}.table-wrap{overflow:auto;max-height:80vh;border:1px solid #cbd8e6;border-radius:10px;background:white}table{border-collapse:separate;border-spacing:0;width:100%;min-width:1350px}th,td{padding:12px;border-bottom:1px solid #dbe3ec;text-align:left;vertical-align:top}th{position:sticky;top:0;background:#e7eff8;z-index:1;white-space:nowrap}td{font-variant-numeric:tabular-nums}tbody tr:nth-child(even){background:#f6f9fc}tbody tr:hover{background:#edf5fd}.article{min-width:260px;max-width:420px;overflow-wrap:anywhere}.detail{min-width:260px;max-width:440px}.tag{display:inline-block;white-space:nowrap;padding:2px 8px;background:#e9eff5;border-radius:5px}tbody tr.keyword-excluded-row{background:#e2e3ef}tbody tr.keyword-excluded-row:hover{background:#d1d3e6}tbody tr.keyword-excluded-row td:first-child{border-left:4px solid #555c91}.keyword-excluded{background:#d1d3e6;color:#353c70}tbody tr.pending-row{background:#d9f2f5}tbody tr.pending-row:hover{background:#c1e7ec}tbody tr.pending-row td:first-child{border-left:4px solid #167d91}tbody tr.error-row{background:#ffdfbd}tbody tr.error-row:hover{background:#ffce9b}tbody tr.error-row td:first-child{border-left:4px solid #ad5100}tbody tr.excluded-row{background:#fff0f3}tbody tr.excluded-row:hover{background:#ffe1e8}tbody tr.excluded-row td:first-child{border-left:4px solid #c62828}tbody tr.body-negative-row{background:#edf8ef}tbody tr.body-negative-row:hover{background:#dceddf}tbody tr.body-negative-row td:first-child{border-left:4px solid #2e7d32}tbody tr.highlight-row{background:#fff3bf}tbody tr.highlight-row:hover{background:#ffe99a}tbody tr.highlight-row td:first-child{border-left:4px solid #c18b00}tbody tr.highlight-negative-row{background:#eadcf8}tbody tr.highlight-negative-row:hover{background:#ddc6f2}tbody tr.highlight-negative-row td:first-child{border-left:4px solid #7b3fa0}.decisive-score{color:#c62828;font-weight:700}.excluded{background:#fce7f0;color:#8a2854}summary{cursor:pointer;color:#1768bd}dl{display:grid;grid-template-columns:1fr 1fr;gap:6px}dd{margin:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:350px;overflow:auto;background:#fff;padding:10px;border:1px solid #dbe3ec}h3{font-size:14px}@media print{.table-wrap{max-height:none;overflow:visible}th{position:static}}
- </style></head><body><h1>AI判定詳細</h1><p>${escape(new Date().toLocaleString())} 時点 · ${rows.length} 行<br>元ページ：<a href="${escape(location.href)}" target="_blank" rel="noopener noreferrer">${escape(location.href)}</a></p><fieldset class="filters"><legend>表示する判定</legend><div class="filter-actions"><button type="button" data-filter-all="true">すべて選択</button><button type="button" data-filter-all="false">すべて選択解除</button></div>${controls}</fieldset><dl class="filter-guide"><dt>キーワード除外</dt><dd>通常の除外キーワードに該当したため機械的に除外された記事</dd><dt>除外</dt><dd>AIによる見出しまたは本文判定の結果、除外対象となった記事</dd><dt>本文で非除外</dt><dd>見出しでは除外候補となったが、本文を読んで除外とはしなかった記事</dd><dt>ハイライト</dt><dd>AIによる見出しまたは本文判定の結果、ハイライト対象となった記事</dd><dt>本文で非ハイライト</dt><dd>見出しではハイライト候補となったが、本文を読んでハイライトしなかった記事</dd><dt>未取得</dt><dd>判定結果をまだ取得していない記事。未送信・順番待ち・通信中のほか、問い合わせ上限到達、AI無効、APIキー未登録、先行する通信のエラーによる停止・再試行待ちを含みます</dd><dt>エラー</dt><dd>この記事のAI判定処理、本文取得、または保存・読み込み処理でエラーが記録された記事。原因は「本文・判定の詳細」で確認できます</dd><dt>通常表示</dt><dd>除外やハイライトの対象とならず通常表示された記事</dd></dl><p id="filter-count" role="status">${rows.length} / ${rows.length} 行を表示</p><p id="filter-empty" hidden>選択した判定に該当する行はありません。</p>${rows.length?`<div class="table-wrap"><table><thead><tr>${['番号','記事','条件','見出しNoul','本文Noul','しきい値','採用','条件判定','記事表示','詳細'].map(k=>`<th scope="col">${k}</th>`).join('')}</tr></thead><tbody>${content}</tbody></table></div>`:'<p>判定対象の記事または条件がありません。</p>'}</body></html>`;
+ </style></head><body><h1>AI判定詳細</h1><p>${escape(new Date().toLocaleString())} 時点 · ${rows.length} 行<br>元ページ：<a href="${escape(location.href)}" target="_blank" rel="noopener noreferrer">${escape(location.href)}</a></p><fieldset class="filters"><legend>表示する判定</legend><div class="filter-actions"><button type="button" data-filter-all="true">すべて選択</button><button type="button" data-filter-all="false">すべて選択解除</button></div>${controls}</fieldset><dl class="filter-guide"><dt>キーワード除外</dt><dd>通常の除外キーワードに該当したため機械的に除外された記事</dd><dt>除外</dt><dd>AIによる見出しまたは本文判定の結果、除外対象となった記事</dd><dt>本文で非除外</dt><dd>見出しでは除外候補となったが、本文を読んで除外とはしなかった記事</dd><dt>ハイライト</dt><dd>AIによる見出しまたは本文判定の結果、ハイライト対象となった記事</dd><dt>本文で非ハイライト</dt><dd>見出しではハイライト候補となったが、本文を読んでハイライトしなかった記事</dd><dt>未取得</dt><dd>判定結果をまだ取得していない記事。未送信・順番待ち・通信中のほか、問い合わせ上限到達、AI無効、APIキー未登録、先行する通信のエラーによる停止・再試行待ちを含みます</dd><dt>エラー</dt><dd>この記事のAI判定処理、本文取得、または保存・読み込み処理でエラーが記録された記事。原因は「本文・判定の詳細」で確認できます</dd><dt>通常表示</dt><dd>除外やハイライトの対象とならず通常表示された記事</dd></dl><p id="filter-count" role="status">${rows.length} / ${rows.length} 行を表示</p><p id="filter-empty" hidden>選択した判定に該当する行はありません。</p>${rows.length?`<div class="table-wrap"><table><thead><tr>${['番号','記事','条件','利用AI','見出しNoul','本文Noul','しきい値','採用','条件判定','記事表示','詳細'].map(k=>`<th scope="col">${k}</th>`).join('')}</tr></thead><tbody>${content}</tbody></table></div>`:'<p>判定対象の記事または条件がありません。</p>'}</body></html>`;
 }
 function decisionTSV(rows){
- const columns=['番号','記事','URL','条件','判定用途','見出しNoul','本文Noul','しきい値','採用','取得元','条件判定','記事表示','キーワード除外','一時解除','追加判定下限','追加判定上限','本文取得失敗','AI有効','判定状況の詳細','最終処理時刻','処理ログ','本文判定に送信したテキスト','表示変更ログ'];
+ const columns=['番号','記事','URL','条件','判定用途','利用AI','見出しNoul','本文Noul','しきい値','採用','取得元','条件判定','記事表示','キーワード除外','一時解除','追加判定下限','追加判定上限','本文取得失敗','AI有効','判定状況の詳細','最終処理時刻','処理ログ','本文判定に送信したテキスト','表示変更ログ'];
  const escape=value=>{
    let s=String(value??'').replace(/\t/g,'\\t').replace(/\r?\n|\r/g,'\\n');
    if(typeof value==='string'&&/^\s*[=+@-]/.test(s))s="'"+s;
@@ -216,7 +218,7 @@ function logAIDecisions(force=false){
 
 function aiStatus(message){
   const missing=!connectionReady(aiLocal);
-  const error=missing?'利用AIが未設定のため機能しません。AIによるハイライト・除外キーワード設定は適用されません。利用するAIの設定を完了してください。':aiStats.systemError||((aiLocal.stopped||aiLocal.failures>0)&&(aiLocal.lastError||'AIの利用が停止しています。設定を確認してください。'));
+  const error=missing?'利用AIが未設定のため機能しません。AIによるハイライト・除外キーワード設定は適用されません。利用するAIの設定を完了してください。':aiStats.systemError||((aiLocal.stopped||aiLocal.failures>0)&&[aiLocal.lastError||'AIの利用が停止しています。設定を確認してください。',aiLocal.errorAdvice].filter(Boolean).join('\n'));
   aiMessage=aiKeyChecking&&!missing?'APIキーを確認しています…':error||message;
   renderAIAvailability?.(missing,!!error&&!aiKeyChecking);
   if(aiRunning){aiProgress.phase=aiMessage;renderAIProgress();}
@@ -554,7 +556,17 @@ function addAIUI({body,text,button,status,applySettings}){
   const runActions=text('div','',operational,'buttons');
   button('直ちに再判定',async()=>{await applySettings();await runAI();},runActions);
   runActions.style.gap='16px';
-  const clearCache=button('判定キャッシュを消去',async()=>{await aiLock(async()=>{aiEpoch++;aiCache={};await GM.setValue(AI_CACHE,{});});aiStatus('キャッシュを消去しました。次の確認時に再判定します。');},runActions);clearCache.style.marginLeft='auto';
+  const clearCache=button('判定キャッシュを消去',async()=>{
+   if(!confirm('判定キャッシュをクリアしてよろしいですか？\n次の判定ではAIに再度問い合わせるため、利用量が発生します。'))return;
+   clearCache.disabled=true;cacheStatus.textContent='判定キャッシュを消去しています…';
+   try{
+    await aiLock(async()=>{await GM.setValue(AI_CACHE,{});aiEpoch++;aiCache={};});
+    cacheStatus.textContent='判定キャッシュを消去しました。次の確認時に再判定します。';
+    aiStatus(cacheStatus.textContent);
+   }catch(e){cacheStatus.textContent='判定キャッシュを消去できませんでした。'+e.message;throw e;}
+   finally{clearCache.disabled=false;}
+  },runActions);clearCache.style.marginLeft='auto';
+  const cacheStatus=text('p','',operational,'hint');cacheStatus.setAttribute('role','status');cacheStatus.setAttribute('aria-live','polite');
   refreshEnabled();
   return {read:()=>({aiHighlightColor:highlightColor.value,aiInterests:interests.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiConditions:conditions.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiThreshold:Number(threshold.value),aiEnabled:enabled.checked,aiBodyEnabled:bodyEnabled.checked,aiBodyLow:Number(low.value),aiDebug:debug.checked,aiShowProgress:showProgress.checked,aiConcurrency:Number(concurrency.value),aiRequestLimit:Number(requestLimit.value)}),
     restore:next=>{highlightColor.value=next.aiHighlightColor;interests.value=next.aiInterests.join('\n');conditions.value=next.aiConditions.join('\n');threshold.value=String(next.aiThreshold);enabled.checked=next.aiEnabled;bodyEnabled.checked=next.aiBodyEnabled;low.value=String(next.aiBodyLow);debug.checked=next.aiDebug;showProgress.checked=next.aiShowProgress;concurrency.value=String(next.aiConcurrency);requestLimit.value=String(next.aiRequestLimit);refreshRange(threshold);refreshEnabled();},

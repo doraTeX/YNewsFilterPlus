@@ -1,23 +1,15 @@
 import {it,expect} from 'vitest';
-import {connection,connectionReady,connectionIdentity,connectionOrigin,requestBody,readDecision,readModels,ollayaBase} from '../src/shared/ai.js';
+import {migrateRetiredAI,connection,connectionReady,connectionIdentity,requestBody,readDecision} from '../src/shared/ai.js';
 const questions={q2:{type:'noul',instructions:'関連していますか？',criteria:{true:'主題である',false:'言及のみ'}}};
 it('旧Jev設定を引き継ぎ、他の接続先にそのキーを送らない',()=>{
  expect(connection({key:'legacy'})).toMatchObject({provider:'jev',key:'legacy',model:'jev-1.13.0',url:'https://api.typesafe.ai/v1/systemone'});
  expect(connection({key:'legacy',provider:'openai'}).key).toBe('');
  expect(connectionReady({provider:'openai',key:'legacy'})).toBe(false);
 });
-it('Ollayaは別ポートでもキーなしで使え、パスや認証情報付きURLを拒否する',()=>{
- const c=connection({provider:'ollaya',key:'secret',profiles:{ollaya:{baseUrl:'http://localhost:23456/',model:'laya'}}});
- expect(c.url).toBe('http://localhost:23456/v1/systemone');expect(c.key).toBe('');
- expect(connectionReady({provider:'ollaya',profiles:{ollaya:{model:'laya'}}})).toBe(true);
- for(const url of ['file:///tmp/x','http://user:pass@localhost:11435','http://localhost:11435/api','https://example.com/?key=x'])expect(()=>ollayaBase(url)).toThrow();
- expect(connectionOrigin('ollaya','http://localhost:23456')).toBe('http://localhost/*');
-});
 it('接続先とモデル別にキャッシュを分離し、キーは識別子に含めない',()=>{
- const a={provider:'ollaya',profiles:{ollaya:{model:'laya',baseUrl:'http://localhost:11435',key:'secret'}}};
+ const a={provider:'openai',profiles:{openai:{key:'secret',model:'gpt-6-luna'}}};
  expect(connectionIdentity(a)).not.toContain('secret');
- expect(connectionIdentity(a)).not.toBe(connectionIdentity({...a,profiles:{ollaya:{...a.profiles.ollaya,baseUrl:'http://localhost:11436'}}}));
- expect(connectionIdentity(a)).not.toBe(connectionIdentity({...a,profiles:{ollaya:{...a.profiles.ollaya,model:'other'}}}));
+ expect(connectionIdentity(a)).not.toBe(connectionIdentity({provider:'jev'}));
  expect(connectionIdentity({provider:'clef',profiles:{clef:{key:'secret'}}})).not.toContain('secret');
 });
 it('OpenAIの名前付きpredicateに変換し、回答順が変わっても正しく取り出す',()=>{
@@ -33,7 +25,13 @@ it('ClefのURLと本文のモデル名を一致させ、Cloudflareの失敗応�
  expect(readDecision(c,{success:true,result:{answers:{q2:{noul:.8}},usage:{input_tokens:5}}},[2])).toEqual({scores:[.8],usage:{input_tokens:5}});
  expect(()=>readDecision(c,{success:false,result:{answers:{q2:{noul:.8}}}},[2])).toThrow();
 });
-it('Ollayaのローカルモデル一覧と空の一覧を処理する',()=>{
- expect(readModels({models:[{name:'laya'},{name:'winnow:e4b'}]})).toEqual(['laya','winnow:e4b']);
- expect(readModels({models:[]})).toEqual([]);expect(()=>readModels({data:[]})).toThrow();
+
+it.each(['nano','ollaya'])('廃止した%s設定から別APIへ勝手に送らない',provider=>{
+ const local={provider,key:'legacy',profiles:{[provider]:{ready:true},jev:{key:'saved-jev'},openai:{key:'saved-openai'}}};
+ const migrated=migrateRetiredAI(local);
+ expect(migrated.provider).toBe('jev');expect(migrated.stopped).toBe(true);
+ expect(migrated.profiles[provider]).toBeUndefined();expect(migrated.profiles.jev.key).toBe('saved-jev');
+ expect(migrated.profiles.openai.key).toBe('saved-openai');expect(connection(migrated).provider).toBe('jev');
+ expect(migrateRetiredAI(migrated)).toBe(migrated);
+ const active=migrateRetiredAI({...local,provider:'openai'});expect(active.provider).toBe('openai');expect(active.stopped).toBeUndefined();
 });

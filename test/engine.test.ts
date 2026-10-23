@@ -204,16 +204,6 @@ it('エラー画面から再試行すると設定画面を開かず停止を解�
  expect(document.querySelectorAll('[data-yne-plus-hidden]')).toHaveLength(2);
 });
 
-it('Ollayaではキー欄を隠し、サーバーURLを端末内だけに保存する',async()=>{
- await boot();const provider=root.querySelector<HTMLSelectElement>('[aria-label="利用するAI"]')!;
- provider.value='ollaya';provider.dispatchEvent(new Event('change',{bubbles:true}));
- await vi.advanceTimersByTimeAsync(10);
- expect(root.querySelector<HTMLInputElement>('input[type=password]')!.parentElement!.hidden).toBe(true);
- const base=root.querySelector<HTMLInputElement>('[aria-label="OllayaサーバーURL"]')!;
- base.value='http://localhost:23456';base.dispatchEvent(new Event('input',{bubbles:true}));await vi.advanceTimersByTimeAsync(600);
- expect(store.yne_plus_jev_local_v1.profiles.ollaya.baseUrl).toBe('http://localhost:23456');
- expect(JSON.stringify(store.yne_plus_settings_v2)).not.toContain('23456');
-});
 it('接続先を切り替えてもJevの保存済みキーを別サービスに引き継がない',async()=>{
  store.yne_plus_jev_local_v1={key:'jev-only'};await boot();
  const provider=root.querySelector<HTMLSelectElement>('[aria-label="利用するAI"]')!;
@@ -224,45 +214,13 @@ it('接続先を切り替えてもJevの保存済みキーを別サービスに�
  provider.value='jev';provider.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(10);
  expect(root.querySelector<HTMLInputElement>('[aria-label="Jev APIキー"]')!.placeholder).toContain('登録済み');
 });
-it('Ollayaでキーなしの判定要求を送りnoulの結果を反映する',async()=>{
- Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiConditions:['科学']});
- store.yne_plus_jev_local_v1={provider:'ollaya',profiles:{ollaya:{baseUrl:'http://localhost:23456',model:'laya'}}};
- await boot();await vi.advanceTimersByTimeAsync(1000);expect(requests.length).toBeGreaterThan(0);
- expect(requests[0].url).toBe('http://localhost:23456/v1/systemone');expect(requests[0].headers.Authorization).toBeUndefined();
- expect(JSON.parse(requests[0].data).model).toBe('laya');
- for(const request of requests)request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.9}}})});
- await vi.advanceTimersByTimeAsync(200);expect(document.querySelectorAll('[data-yne-plus-hidden]').length).toBeGreaterThan(0);
-});
-it('Ollayaの指定URLで一覧を取得し、モデルを選ぶまでは判定を始めない',async()=>{
- Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
- store.yne_plus_jev_local_v1={provider:'ollaya',profiles:{ollaya:{baseUrl:'http://localhost:23456'}}};
- const permission=vi.fn().mockResolvedValue(true),list=vi.fn().mockResolvedValue(['laya','winnow:e4b']);
- await boot({requestAIOrigin:permission,listAIModels:list});
- Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='モデル一覧を取得')!.click();
- await vi.advanceTimersByTimeAsync(200);
- expect(permission).toHaveBeenCalledWith('ollaya','http://localhost:23456');expect(list).toHaveBeenCalledWith('http://localhost:23456');
- const model=root.querySelector<HTMLSelectElement>('[aria-label="AIモデル"]')!;
- expect([...model.options].map(o=>o.value)).toEqual(['','laya','winnow:e4b']);expect(requests).toHaveLength(0);
- model.value='laya';model.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(200);
- expect(store.yne_plus_jev_local_v1.profiles.ollaya.model).toBe('laya');expect(requests.length).toBeGreaterThan(0);
-});
-it('Ollayaの通信許可を拒否したら一覧も記事も送信しない',async()=>{
- store.yne_plus_jev_local_v1={provider:'ollaya'};const list=vi.fn();
- await boot({requestAIOrigin:vi.fn().mockResolvedValue(false),listAIModels:list});
- // Enable the fieldset just as the user would before configuring the connection.
- const enabled=root.querySelector<HTMLInputElement>('[aria-label="AIを有効にする"]')!;enabled.checked=true;enabled.dispatchEvent(new Event('change',{bubbles:true}));
- Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='モデル一覧を取得')!.click();await vi.advanceTimersByTimeAsync(200);
- expect(list).not.toHaveBeenCalled();expect(requests).toHaveLength(0);
-});
 
 it.each([
- ['ollaya',401,'認証・アクセス制限',false],
  ['clef',403,'Workers AI',true],
- ['ollaya',404,'モデル一覧を再取得',false],
  ['openai',429,'請求設定',false],
 ] as const)('%s HTTP %sの保存とエラー画面が接続先に合う',async(provider,status,advice,focusKey)=>{
  Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
- store.yne_plus_jev_local_v1={provider,profiles:{[provider]:{key:'test-key',accountId:'a'.repeat(32),model:provider==='ollaya'?'laya':provider==='clef'?'clef':'gpt-6-luna'}}};
+ store.yne_plus_jev_local_v1={provider,profiles:{[provider]:{key:'test-key',accountId:'a'.repeat(32),model:provider==='clef'?'clef':'gpt-6-luna'}}};
  await boot();await vi.advanceTimersByTimeAsync(1000);
  for(const request of requests)request.onload({status,responseText:JSON.stringify({error:{code:'insufficient_quota'}})});
  await vi.advanceTimersByTimeAsync(100);
@@ -282,16 +240,6 @@ it.each([
  for(const request of requests)request.onload({status:200,responseText});await vi.advanceTimersByTimeAsync(100);
  expect(store.yne_plus_jev_local_v1.errorKind).toBe(kind);expect(store.yne_plus_jev_local_v1.stopped).toBe(true);
  expect(Object.keys(store.yne_plus_jev_cache_v1||{})).toHaveLength(0);expect(document.querySelectorAll('[data-yne-plus-hidden]')).toHaveLength(0);
-});
-it('モデル一覧の古い失敗が切替後の設定画面を上書きしない',async()=>{
- store.yne_plus_jev_local_v1={provider:'ollaya'};Object.assign(store.yne_plus_settings_v2,{aiEnabled:true});
- let rejectList:(error:Error)=>void=()=>{};
- await boot({requestAIOrigin:async()=>true,listAIModels:()=>new Promise((_resolve,reject)=>{rejectList=reject;})});
- Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='モデル一覧を取得')!.click();await vi.advanceTimersByTimeAsync(1);
- const provider=root.querySelector<HTMLSelectElement>('[aria-label="利用するAI"]')!;
- provider.value='jev';provider.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(10);
- rejectList(Error('古い一覧取得の失敗'));await vi.advanceTimersByTimeAsync(10);
- expect(root.textContent).not.toContain('古い一覧取得の失敗');expect(store.yne_plus_jev_local_v1.provider).toBe('jev');
 });
 
 it('遅れて完了したキャッシュ読み込みが新しいハイライトを取り消さない',async()=>{
@@ -368,7 +316,7 @@ it('Yahooの記事カードでコメント件数が遅れて追加・更新さ�
 });
 
 
-it.each(['jev','clef','openai','ollaya'])('%sの未設定をピンク背景と注意書き・エラー状況で示す',async provider=>{
+it.each(['jev','clef','openai'])('%sの未設定をピンク背景と注意書き・エラー状況で示す',async provider=>{
  store.yne_plus_jev_local_v1={provider};await boot();
  const section=root.querySelector<HTMLElement>('.jev-section')!;
  expect(section.querySelector('summary')!.textContent).toContain('AIによるハイライト/除外判定');
@@ -393,4 +341,39 @@ it('設定済みでも認証エラーで停止中ならブロック全体をエ�
  expect(section.style.backgroundColor).toBe('rgb(255, 240, 243)');
  expect(section.querySelector(':scope > [role=alert]')!.textContent).toContain('利用AIのエラー');
  expect(section.querySelector('fieldset [role=alert]')!.textContent).toContain('HTTP 401');
+});
+
+it.each(['clef','clef-flash'])('利用AI %s を表とTSVに表示し、未判定・通常キーワードを区別する',async(model)=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiInterests:['文化']});
+ store.yne_plus_jev_local_v1={provider:'clef',profiles:{clef:{key:'secret-token',accountId:'a'.repeat(32),model}}};
+ const copy=vi.fn(),report=vi.fn();await boot({openReport:report},{setClipboard:copy});
+ const click=async(label:string)=>{Array.from(root.querySelectorAll('button')).find(b=>b.textContent===label)!.click();await vi.advanceTimersByTimeAsync(1);};
+ await click('判定詳細をTSVでコピー');
+ expect(copy.mock.calls.at(-1)![0]).toContain(`Cloudflare Clef / ${model}（未判定）`);
+ await vi.advanceTimersByTimeAsync(1000);
+ expect(requests.length).toBeGreaterThan(0);
+ for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({success:true,result:{answers:{q0:{noul:.97}}}})});
+ await vi.advanceTimersByTimeAsync(200);
+ await click('判定詳細をTSVでコピー');
+ const tsv=copy.mock.calls.at(-1)![0];
+ expect(tsv).toContain('利用AI');expect(tsv).toContain(`Cloudflare Clef / ${model}\t`);
+ expect(tsv).toContain('不使用（通常キーワード）');expect(tsv).not.toContain('secret-token');expect(tsv).not.toContain('a'.repeat(32));
+ await click('判定詳細を表で開く');
+ expect(report.mock.calls.at(-1)![0]).toContain('<th scope="col">利用AI</th>');
+ expect(report.mock.calls.at(-1)![0]).toContain(`<td>Cloudflare Clef / ${model}</td>`);
+});
+
+it('キャッシュ消去は確認し、キャンセルなら保持、承認なら消去完了を表示する',async()=>{
+ const cached={saved:{time:Date.now(),scores:[.9]}};store.yne_plus_jev_cache_v1=cached;
+ store.yne_plus_settings_v2.aiEnabled=true;store.yne_plus_jev_local_v1={key:'test-key'};
+ await boot();
+ const button=Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定キャッシュを消去')!;
+ vi.mocked(window.confirm).mockReturnValue(false);
+ button.click();await vi.advanceTimersByTimeAsync(1);
+ expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('判定キャッシュをクリアしてよろしいですか？'));
+ expect(store.yne_plus_jev_cache_v1).toEqual(cached);
+ vi.mocked(window.confirm).mockReturnValue(true);
+ button.click();await vi.advanceTimersByTimeAsync(1);
+ expect(store.yne_plus_jev_cache_v1).toEqual({});
+ expect(root.textContent).toContain('判定キャッシュを消去しました。');expect(button.disabled).toBe(false);
 });

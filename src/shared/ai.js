@@ -1,16 +1,11 @@
 import {aiError} from './ai-errors.js';
 // Connection settings are local to this browser; legacy `key` belongs only to Jev.
 export const AI_LOCAL='yne_plus_jev_local_v1';
-export const PROVIDERS={jev:'Jev',clef:'Cloudflare Clef',openai:'OpenAI Decisions',ollaya:'Ollaya（ローカル）'};
+export const PROVIDERS={jev:'Jev',openai:'OpenAI Decisions',clef:'Cloudflare Clef'};
 export function providerOf(local={}){const id=local.provider||'jev';if(!Object.hasOwn(PROVIDERS,id))throw Error('未対応の接続先です');return id;}
 export function profileOf(local={},id=providerOf(local)){
  const saved=local.profiles?.[id]||{};
- return {key:id==='jev'?(saved.key??local.key??''):(saved.key||''),accountId:saved.accountId||'',model:saved.model||(id==='jev'?'jev-1.13.0':id==='openai'?'gpt-6-luna':id==='clef'?'clef':''),baseUrl:saved.baseUrl||'http://localhost:11435'};
-}
-export function ollayaBase(value){
- let u;try{u=new URL(value);}catch{throw Error('OllayaのサーバーURLを入力してください');}
- if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash||u.pathname!=='/')throw Error('OllayaのURLは http(s)://ホスト:ポート の形式にしてください');
- return u.origin;
+ return {key:id==='jev'?(saved.key??local.key??''):(saved.key||''),accountId:saved.accountId||'',model:saved.model||(id==='jev'?'jev-1.13.0':id==='openai'?'gpt-6-luna':id==='clef'?'clef':'')};
 }
 export function connection(local={}){
  const provider=providerOf(local),p=profileOf(local,provider);
@@ -22,14 +17,12 @@ export function connection(local={}){
   if(!['clef','clef-flash'].includes(p.model))throw Error('Clefのモデルを選択してください');
   url=`https://api.cloudflare.com/client/v4/accounts/${p.accountId}/ai/run/@cf/cloudflare/${p.model}`;
  }
- if(provider==='ollaya')url=ollayaBase(p.baseUrl)+'/v1/systemone';
- if(!p.model.trim())throw Error('Ollayaのモデルを選択してください');
- return {provider,...p,url,key:provider==='ollaya'?'':p.key,timeout:provider==='ollaya'?120000:30000};
+ return {provider,...p,url,key:p.key,timeout:30000};
 }
-export function connectionReady(local){try{const c=connection(local);return c.provider==='ollaya'||!!c.key.trim();}catch{return false;}}
+export function connectionReady(local){try{const c=connection(local);return !!c.key.trim();}catch{return false;}}
 export function connectionIdentity(local){try{const c=connection(local);return JSON.stringify([c.provider,c.url,c.model]);}catch{const p=local.profiles?.[local.provider]||{};return JSON.stringify([local.provider,p.baseUrl,p.model,p.accountId]);}}
-export function connectionOrigin(id,baseUrl){
- const url=id==='ollaya'?ollayaBase(baseUrl):({jev:'https://api.typesafe.ai',clef:'https://api.cloudflare.com',openai:'https://api.openai.com'})[id];
+export function connectionOrigin(id){
+ const url=({jev:'https://api.typesafe.ai',clef:'https://api.cloudflare.com',openai:'https://api.openai.com'})[id];
  if(!url)throw Error('未対応の接続先です');
  // Chrome host patterns do not include a port; network requests still validate the exact URL.
  return new URL(url).protocol+'//'+new URL(url).hostname+'/*';
@@ -54,7 +47,14 @@ export function readDecision(c,raw,targets){
  if(!scores.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))throw aiError(c.provider,'format');
  return {scores,usage:data.usage};
 }
-export function readModels(raw){
- if(!Array.isArray(raw?.models)||raw.models.some(m=>typeof m?.name!=='string'||!m.name.trim()))throw aiError('ollaya','format',{phase:'モデル一覧取得'});
- return [...new Set(raw.models.map(m=>m.name))];
+
+// Retired experimental provider: keep other credentials, and never silently switch to a paid API.
+/** @param {Record<string, any>} local */
+export function migrateRetiredAI(local={}){
+ const retired=['nano','ollaya'];
+ if(!retired.includes(local.provider)&&!retired.some(id=>Object.hasOwn(local.profiles||{},id)))return local;
+ const profiles={...local.profiles};for(const id of retired)delete profiles[id];
+ return {...local,profiles,...(retired.includes(local.provider)?{provider:'jev',stopped:true,failures:0,blockedUntil:0,
+  lastError:'選択していたAIの対応を終了しました。利用するAIを選び直してください。',errorKind:'retired',errorProvider:'',errorFocusKey:false,
+  errorAdvice:'設定画面で利用するAIを選び、設定を確認してから再試行してください。'}:{})};
 }

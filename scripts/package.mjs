@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {resolve,join} from 'node:path';
 const pkg=JSON.parse(readFileSync('package.json','utf8'));
-const dist=resolve('dist'),release=resolve('release');mkdirSync(release,{recursive:true});
+const dist=resolve(process.argv[2]||'dist'),release=resolve('release');mkdirSync(release,{recursive:true});
 const zip=join(release,`ynews-filter-plus-${pkg.version}.zip`);
 const manifest=JSON.parse(readFileSync(join(dist,'manifest.json'),'utf8'));
 if(manifest.name!=='Y!News Filter Plus'||manifest.version!==pkg.version)throw Error('名前・バージョンが一致しません');

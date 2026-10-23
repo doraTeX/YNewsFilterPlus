@@ -13,9 +13,9 @@ it('更新で接続が無効になったら再送せず案内を一度だけ表�
 });
 it('通信エラーの接続先・停止方針・案内をコールバックまで引き継ぐ',async()=>{
  vi.resetModules();
- vi.stubGlobal('chrome',{runtime:{id:'test',sendMessage:vi.fn().mockResolvedValue({ok:false,error:'Ollayaの失敗',details:{provider:'ollaya',kind:'permission',stop:true,advice:'モデル一覧を取得'}}),onMessage:{addListener:vi.fn()}},storage:{onChanged:{addListener:vi.fn()}}});
+ vi.stubGlobal('chrome',{runtime:{id:'test',sendMessage:vi.fn().mockResolvedValue({ok:false,error:'OpenAIの失敗',details:{provider:'openai',kind:'permission',stop:true,advice:'この接続先への通信を許可'}}),onMessage:{addListener:vi.fn()}},storage:{onChanged:{addListener:vi.fn()}}});
  const {GM}=await import('../src/shared/bridge');const onerror=vi.fn();
- GM.xmlHttpRequest({method:'POST',url:'http://localhost:11435/v1/systemone',onerror});
+ GM.xmlHttpRequest({method:'POST',url:'https://api.openai.com/v1/decisions',onerror});
  for(let i=0;i<10;i++)await Promise.resolve();
- expect(onerror).toHaveBeenCalledWith(expect.objectContaining({provider:'ollaya',kind:'permission',stop:true,advice:'モデル一覧を取得'}));
+ expect(onerror).toHaveBeenCalledWith(expect.objectContaining({provider:'openai',kind:'permission',stop:true,advice:'この接続先への通信を許可'}));
 });

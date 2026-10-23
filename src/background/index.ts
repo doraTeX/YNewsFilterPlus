@@ -3,11 +3,17 @@ import {updateToolbarBadge} from './badge';
 import {SETTINGS,HISTORY} from '../shared/sync';
 import {defaults} from '../shared/settings.js';
 import {YAHOO_HOSTS} from '../shared/hosts';
-import {AI_LOCAL,connectionOrigin} from '../shared/ai.js';
-import {listModels,network} from './network';
+import {AI_LOCAL,connectionOrigin,migrateRetiredAI} from '../shared/ai.js';
+import {network} from './network';
 const store=new Store();
 const keys=new Set([SETTINGS,HISTORY,AI_LOCAL,'yne_plus_jev_cache_v1','yne_plus_v1']);
-const ready=store.queue(()=>store.reconcile());
+const ready=store.queue(async()=>{
+ const local=(await chrome.storage.local.get(AI_LOCAL))[AI_LOCAL];
+ if(local){const migrated=migrateRetiredAI(local);if(migrated!==local)await chrome.storage.local.set({[AI_LOCAL]:migrated});}
+ const cacheKey='yne_plus_jev_cache_v1',cache=(await chrome.storage.local.get(cacheKey))[cacheKey];
+ if(cache){const kept=Object.fromEntries(Object.entries(cache).filter(([key])=>{try{return JSON.parse(JSON.parse(key.split('|article-intro-')[0])[1])[0]!=='ollaya';}catch{return true;}}));if(Object.keys(kept).length!==Object.keys(cache).length)await chrome.storage.local.set({[cacheKey]:kept});}
+ return store.reconcile();
+});
 function schedule(){void chrome.alarms.create('sync-retry',{delayInMinutes:0.5});}
 chrome.alarms.onAlarm.addListener(a=>{if(a.name==='sync-retry')void store.queue(()=>store.reconcile());});
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='sync'&&Object.keys(changes).some(k=>k.startsWith('ynfp:')))schedule();});
@@ -20,7 +26,7 @@ function allowed(sender:chrome.runtime.MessageSender){
  const u=new URL(sender.url);return u.origin===new URL(chrome.runtime.getURL('/')).origin||(u.protocol==='https:'&&YAHOO_HOSTS.includes(u.hostname));
 }
 async function handle(m:any,sender:chrome.runtime.MessageSender){
- if(m.type==='AI_PERMISSION')return chrome.permissions.request({origins:[connectionOrigin(m.provider,m.baseUrl)]});
+ if(m.type==='AI_PERMISSION')return chrome.permissions.request({origins:[connectionOrigin(m.provider)]});
  if(m.type==='BADGE')return updateToolbarBadge(m.count,sender,m.error);
  await ready;
  switch(m.type){
@@ -32,7 +38,6 @@ async function handle(m:any,sender:chrome.runtime.MessageSender){
  case 'SYNC_ENABLED':if(typeof m.enabled!=='boolean')throw Error('同期設定が不正です');await store.queue(async()=>{await store.setEnabled(m.enabled);await store.reconcile();});return null;
  case 'RESOLVE':await store.queue(()=>store.resolve(m.doc));return null;
  case 'NETWORK':return network(m);
- case 'AI_MODELS':return listModels(m.baseUrl);
  case 'REPORT':{if(typeof m.html!=='string'||m.html.length>5_000_000)throw Error('表が大きすぎます');const id=crypto.randomUUID();await chrome.storage.session.set({['report:'+id]:m.html});await chrome.tabs.create({url:chrome.runtime.getURL('src/report/index.html')+'?id='+id});return null;}
  default:throw Error('未対応の操作です');
  }

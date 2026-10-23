@@ -33,8 +33,7 @@ export const GM={
 };
 export const bridge={
  isConnected,
- requestAIOrigin:(provider:string,baseUrl:string)=>call('AI_PERMISSION',{provider,baseUrl}),
- listAIModels:(baseUrl:string)=>call('AI_MODELS',{baseUrl}),
+ requestAIOrigin:(provider:string)=>call('AI_PERMISSION',{provider}),
  updateBadge:(count:number,error='')=>call('BADGE',{count,error}),
  saveSettings:(value:unknown,reason:string,expected?:unknown)=>call('SAVE',{value,reason,expected}),
  sync:()=>call('SYNC'),syncStatus:()=>call('SYNC_STATUS'),setSyncEnabled:(enabled:boolean)=>call('SYNC_ENABLED',{enabled}),

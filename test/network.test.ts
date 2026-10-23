@@ -12,12 +12,8 @@ it('バックグラウンドは保存した接続先のキーだけを付ける'
  const {fetch,request}=setup({key:'jev-secret',provider:'openai',profiles:{openai:{key:'openai-secret'}}});
  await network({request});expect(fetch).toHaveBeenCalledWith('https://api.openai.com/v1/decisions',expect.objectContaining({headers:{Authorization:'Bearer openai-secret','Content-Type':'application/json'},redirect:'error',credentials:'omit'}));
 });
-it('OllayaへJevの認証情報を送らない',async()=>{
- const {fetch,request}=setup({key:'jev-secret',provider:'ollaya',profiles:{ollaya:{model:'laya',baseUrl:'http://localhost:23456'}}});
- await network({request});expect(fetch.mock.calls[0][1].headers).toEqual({'Content-Type':'application/json'});
-});
 it('別ポート、別ホスト、設定変更前の要求を送らない',async()=>{
- const {fetch,request}=setup({provider:'ollaya',profiles:{ollaya:{model:'laya'}}});
+ const {fetch,request}=setup({provider:'openai',profiles:{openai:{key:'test'}}});
  for(const url of ['http://localhost:11436/v1/systemone','http://evil.test/v1/systemone'])await expect(network({request:{...request,url}})).rejects.toThrow();
  await expect(network({request:{...request,connection:'old'}})).rejects.toThrow();expect(fetch).not.toHaveBeenCalled();
 });
@@ -27,21 +23,11 @@ it('任意ホストへの許可がなくても記事本文取得はでき、AI�
  await network({request:{url:'https://news.yahoo.co.jp/articles/test',method:'GET'}});expect(fetch).toHaveBeenCalledTimes(1);expect(fetch.mock.calls[0][1].headers).toBeUndefined();
 });
 
-it('モデル一覧の失敗をHTTP・JSON不正・通信障害に分ける',async()=>{
- const {listModels}=await import('../src/background/network');
- const {fetch}=setup({});
- fetch.mockResolvedValueOnce({status:404,text:async()=>'{}',headers:new Headers()});
- await expect(listModels('http://localhost:23456')).rejects.toMatchObject({kind:'http',status:404,provider:'ollaya'});
- fetch.mockResolvedValueOnce({status:200,text:async()=>'<html>error</html>',headers:new Headers()});
- await expect(listModels('http://localhost:23456')).rejects.toMatchObject({kind:'format'});
- fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
- await expect(listModels('http://localhost:23456')).rejects.toMatchObject({kind:'network',provider:'ollaya'});
-});
 it('通信のAbortと巨大な応答を区別する',async()=>{
  const {fetchResult}=await import('../src/background/network');
  const {fetch}=setup({});
  fetch.mockImplementationOnce((_url,options)=>new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')))));
- await expect(fetchResult('http://localhost:11435',{},1,'ollaya')).rejects.toMatchObject({kind:'timeout'});
+ await expect(fetchResult('https://api.openai.com',{},1,'openai')).rejects.toMatchObject({kind:'timeout'});
  fetch.mockResolvedValueOnce({status:200,text:async()=>'x'.repeat(6000001)});
- await expect(fetchResult('http://localhost:11435',{},100,'ollaya')).rejects.toMatchObject({kind:'size',stop:true});
+ await expect(fetchResult('https://api.openai.com',{},100,'openai')).rejects.toMatchObject({kind:'size',stop:true});
 });
