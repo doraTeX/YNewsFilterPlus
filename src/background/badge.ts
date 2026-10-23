@@ -6,6 +6,6 @@ export async function updateToolbarBadge(count:unknown,sender:chrome.runtime.Mes
  await chrome.action.setBadgeBackgroundColor({tabId,color:'#D93025'});
  await chrome.action.setBadgeTextColor({tabId,color:'#FFFFFF'});
  await chrome.action.setBadgeText({tabId,text:typeof error==='string'&&error?'×':String(count)});
- await chrome.action.setTitle({tabId,title:typeof error==='string'&&error?'Jevエラー：'+error.slice(0,500):'Y!News Filter Plus'});
+ await chrome.action.setTitle({tabId,title:typeof error==='string'&&error?'AIエラー：'+error.slice(0,500):'Y!News Filter Plus'});
  return null;
 }

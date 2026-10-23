@@ -3,8 +3,9 @@ import {updateToolbarBadge} from './badge';
 import {SETTINGS,HISTORY} from '../shared/sync';
 import {defaults} from '../shared/settings.js';
 import {YAHOO_HOSTS} from '../shared/hosts';
+import {AI_LOCAL,connectionOrigin} from '../shared/ai.js';
+import {listModels,network} from './network';
 const store=new Store();
-const AI_LOCAL='yne_plus_jev_local_v1';
 const keys=new Set([SETTINGS,HISTORY,AI_LOCAL,'yne_plus_jev_cache_v1','yne_plus_v1']);
 const ready=store.queue(()=>store.reconcile());
 function schedule(){void chrome.alarms.create('sync-retry',{delayInMinutes:0.5});}
@@ -18,22 +19,8 @@ function allowed(sender:chrome.runtime.MessageSender){
  if(sender.id!==chrome.runtime.id||!sender.url)return false;
  const u=new URL(sender.url);return u.origin===new URL(chrome.runtime.getURL('/')).origin||(u.protocol==='https:'&&YAHOO_HOSTS.includes(u.hostname));
 }
-async function network(message:any){
- const r=message.request,u=new URL(r.url);
- const jev=u.href==='https://api.typesafe.ai/v1/systemone'&&r.method==='POST';
- const article=u.origin==='https://news.yahoo.co.jp'&&r.method==='GET'&&/^\/(articles|pickup|expert\/articles)\/[^/]+\/?$/.test(u.pathname);
- if(!jev&&!article)throw Error('許可されていない通信先です');
- const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),Math.min(r.timeout||30000,30000));
- try{
-  const local=(await chrome.storage.local.get(AI_LOCAL))[AI_LOCAL];
-  if(jev&&!local?.key)throw Error('Jev APIキーが未登録です');
-  const response=await fetch(u.href,{method:r.method,credentials:'omit',redirect:'error',signal:controller.signal,
-   ...(jev?{headers:{Authorization:'Bearer '+local.key,'Content-Type':'application/json'},body:r.data}:{} )});
-  const responseText=await response.text();if(responseText.length>6_000_000)throw Error('応答が大きすぎます');
-  return {status:response.status,responseText,responseHeaders:Array.from(response.headers).map(([k,v])=>k+': '+v).join('\r\n'),finalUrl:response.url};
- }finally{clearTimeout(timeout);}
-}
 async function handle(m:any,sender:chrome.runtime.MessageSender){
+ if(m.type==='AI_PERMISSION')return chrome.permissions.request({origins:[connectionOrigin(m.provider,m.baseUrl)]});
  if(m.type==='BADGE')return updateToolbarBadge(m.count,sender,m.error);
  await ready;
  switch(m.type){
@@ -45,13 +32,14 @@ async function handle(m:any,sender:chrome.runtime.MessageSender){
  case 'SYNC_ENABLED':if(typeof m.enabled!=='boolean')throw Error('同期設定が不正です');await store.queue(async()=>{await store.setEnabled(m.enabled);await store.reconcile();});return null;
  case 'RESOLVE':await store.queue(()=>store.resolve(m.doc));return null;
  case 'NETWORK':return network(m);
+ case 'AI_MODELS':return listModels(m.baseUrl);
  case 'REPORT':{if(typeof m.html!=='string'||m.html.length>5_000_000)throw Error('表が大きすぎます');const id=crypto.randomUUID();await chrome.storage.session.set({['report:'+id]:m.html});await chrome.tabs.create({url:chrome.runtime.getURL('src/report/index.html')+'?id='+id});return null;}
  default:throw Error('未対応の操作です');
  }
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
  if(!allowed(sender))return false;
- void handle(message,sender).then(value=>respond({ok:true,value}),e=>respond({ok:false,error:e?.name==='AbortError'?'timeout':e instanceof Error?e.message:'処理に失敗しました'}));return true;
+ void handle(message,sender).then(value=>respond({ok:true,value}),e=>respond({ok:false,details:{provider:e?.provider,kind:e?.kind,status:e?.status,stop:e?.stop,advice:e?.advice,focusKey:e?.focusKey},error:e?.name==='AbortError'?'timeout':e instanceof Error?e.message:'処理に失敗しました'}));return true;
 });
 
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='loading'){void chrome.action.setBadgeText({tabId,text:''}).catch(()=>{});void chrome.action.setTitle({tabId,title:'Y!News Filter Plus'}).catch(()=>{});}});

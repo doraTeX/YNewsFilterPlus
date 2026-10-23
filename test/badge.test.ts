@@ -18,7 +18,7 @@ it('エラーを×で表示し復旧後は件数に戻す',async()=>{
  const sender={tab:{id:7} as chrome.tabs.Tab,frameId:0,url:'https://news.yahoo.co.jp/'};
  await updateToolbarBadge(12,sender,'HTTP 401: 認証エラー');
  expect(setBadgeText).toHaveBeenLastCalledWith({tabId:7,text:'×'});
- expect(setTitle).toHaveBeenLastCalledWith({tabId:7,title:'Jevエラー：HTTP 401: 認証エラー'});
+ expect(setTitle).toHaveBeenLastCalledWith({tabId:7,title:'AIエラー：HTTP 401: 認証エラー'});
  await updateToolbarBadge(12,sender);
  expect(setBadgeText).toHaveBeenLastCalledWith({tabId:7,text:'12'});
 });

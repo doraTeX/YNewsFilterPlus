@@ -1,6 +1,7 @@
 import {afterEach,beforeEach,it,expect,vi} from 'vitest';
 import {defaults} from '../src/shared/settings.js';
 import {startEngine} from '../src/content/engine.js';
+const engineCleanups:Array<()=>void>=[];
 let root:ShadowRoot,store:Record<string,any>,menus:Record<string,()=>void>,requests:any[],saveFailure:boolean;
 beforeEach(()=>{
  vi.useFakeTimers();document.body.innerHTML='<main><ul><li><a href="https://news.yahoo.co.jp/articles/example-one">科学の新しい記事</a></li><li><a href="https://news.yahoo.co.jp/articles/example-two">文化の記事</a></li></ul></main>';
@@ -9,8 +10,8 @@ beforeEach(()=>{
  HTMLDialogElement.prototype.showModal=function(){this.open=true;};HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new Event('close'));};
  vi.spyOn(window,'confirm').mockReturnValue(true);
 });
-afterEach(()=>{vi.clearAllTimers();vi.useRealTimers();vi.restoreAllMocks();});
-async function boot(){await startEngine({getValue:async(k:string,f:any)=>structuredClone(store[k]??f),setValue:async(k:string,v:any)=>{store[k]=structuredClone(v);},registerMenuCommand:async(n:string,f:()=>void)=>{menus[n]=f;},xmlHttpRequest:(r:any)=>requests.push(r),setClipboard:async()=>{}},{saveSettings:async(v:any)=>{if(saveFailure)throw Error('テスト保存失敗');store.yne_plus_settings_v2=structuredClone(v);},sync:async()=>{},syncStatus:async()=>({enabled:true,message:'同期済み',conflicts:[]}),setSyncEnabled:async()=>{},resolve:async()=>{},openReport:async()=>{},updateBadge:async()=>{},onSettingsChanged:()=>{}});menus['Y!News Filter Plus 設定']();await Promise.resolve();}
+afterEach(()=>{for(const cleanup of engineCleanups.splice(0))cleanup();vi.clearAllTimers();vi.useRealTimers();vi.restoreAllMocks();});
+async function boot(overrides:Record<string,any>={},gmOverrides:Record<string,any>={}){let alive=true;engineCleanups.push(()=>{alive=false;});await startEngine({getValue:async(k:string,f:any)=>structuredClone(store[k]??f),setValue:async(k:string,v:any)=>{store[k]=structuredClone(v);},registerMenuCommand:async(n:string,f:()=>void)=>{menus[n]=f;},xmlHttpRequest:(r:any)=>requests.push(r),setClipboard:async()=>{},...gmOverrides},{isConnected:()=>alive,saveSettings:async(v:any)=>{if(saveFailure)throw Error('テスト保存失敗');store.yne_plus_settings_v2=structuredClone(v);},sync:async()=>{},syncStatus:async()=>({enabled:true,message:'同期済み',conflicts:[]}),setSyncEnabled:async()=>{},resolve:async()=>{},openReport:async()=>{},updateBadge:async()=>{},onSettingsChanged:()=>{},...overrides});menus['Y!News Filter Plus 設定']();await Promise.resolve();}
 it('キーワード除外とChrome同期UIを持ち、Gist入力はない',async()=>{await boot();expect(document.querySelector('[data-yne-plus-hidden]')?.textContent).toContain('科学');expect(root.textContent).toContain('Chrome同期');expect(root.querySelector('[aria-label="Secret Gist"]')).toBeNull();expect(requests).toHaveLength(0);});
 it('設定JSONを読み込みJev設定も移行する',async()=>{
  await boot();const file=root.querySelector<HTMLInputElement>('input[type=file]')!;
@@ -41,13 +42,13 @@ it('色選択で記事背景のCSSと保存設定が更新される',async()=>{
 it('進捗表示をOFFからONにして閉じても保存される',async()=>{
  store.yne_plus_settings_v2.aiShowProgress=false;
  await boot();
- const checkbox=root.querySelector<HTMLInputElement>('[aria-label="Jevの進捗ツールチップを表示する"]')!;
+ const checkbox=root.querySelector<HTMLInputElement>('[aria-label="AIの進捗ツールチップを表示する"]')!;
  checkbox.checked=true;checkbox.dispatchEvent(new Event('change',{bubbles:true}));
  document.querySelector('dialog')!.close();
  await vi.advanceTimersByTimeAsync(600);
  expect(store.yne_plus_settings_v2.aiShowProgress).toBe(true);
  menus['Y!News Filter Plus 設定']();
- expect(root.querySelector<HTMLInputElement>('[aria-label="Jevの進捗ツールチップを表示する"]')!.checked).toBe(true);
+ expect(root.querySelector<HTMLInputElement>('[aria-label="AIの進捗ツールチップを表示する"]')!.checked).toBe(true);
 });
 
 it('保存失敗時は閉じずに入力を残し、再操作で保存できる',async()=>{
@@ -134,9 +135,234 @@ it('キャッシュ確認とは独立して変更したAPIキーを検証し認�
  await vi.advanceTimersByTimeAsync(1);
  expect(requests).toHaveLength(1);
  requests[0].onload({status:401,responseHeaders:''});await vi.advanceTimersByTimeAsync(10);
- const notice=Array.from(root.querySelectorAll('p')).find(p=>p.textContent?.includes('API Keyが無効です'))!;
+ const notice=Array.from(root.querySelectorAll('p')).find(p=>p.textContent?.includes('HTTP 401'))!;
  expect(notice).toBeDefined();expect(notice.style.color).toBe('rgb(180, 35, 24)');
  await vi.advanceTimersByTimeAsync(60000);
- expect(notice.textContent).toContain('API Keyが無効です');
+ expect(notice.textContent).toContain('HTTP 401');
  expect(store.yne_plus_jev_local_v1.stopped).toBe(true);
+});
+
+it.each(['chip','toolbar'])('通信エラーでも%s経由で閉じた後に設定を変更できる',async(source)=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={key:'test-key'};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ for(const request of requests)request.ontimeout();
+ await vi.advanceTimersByTimeAsync(1000);
+ document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.close();
+ if(source==='chip')document.getElementById('yne-plus-badge')!.click();
+ else menus['Y!News Filter Plus 設定']();
+ const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-error-dialog')!;
+ const content=dialog.firstElementChild!.shadowRoot!;
+ expect(content.textContent).toContain('時間切れ');
+ const close=content.querySelector<HTMLButtonElement>('button')!;
+ expect(close.textContent).toBe('閉じて設定を開く');close.click();
+ expect(document.querySelector('#yne-plus-error-dialog')).toBeNull();
+ expect(document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.open).toBe(true);
+ const area=root.querySelector<HTMLTextAreaElement>('textarea')!;
+ area.value='変更できる';area.dispatchEvent(new Event('input',{bubbles:true}));
+ await vi.advanceTimersByTimeAsync(600);
+ expect(store.yne_plus_settings_v2.rows).toEqual(['変更できる']);
+});
+
+
+it('保存された停止状態を新しい通信エラーと区別し再開方法を示す',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={key:'test-key',stopped:true,failures:5,lastError:'Jev通信が完了しません。',lastErrorAt:'2026-10-21T23:31:27.696Z'};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ expect(requests).toHaveLength(0);
+ const content=document.querySelector('#yne-plus-error-dialog')!.firstElementChild!.shadowRoot!;
+ expect(content.textContent).toContain('過去のエラーによりAIを停止');
+ expect(content.textContent).toContain('最後のエラー日時');
+ expect(content.textContent).toContain('再試行');
+});
+it('完了通知が来ない場合は権限不足と断定せず35秒で終了する',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={key:'test-key'};
+ await boot();await vi.advanceTimersByTimeAsync(36000);
+ expect(store.yne_plus_jev_local_v1.lastError).toContain('完了通知を35秒以内');
+ expect(store.yne_plus_jev_local_v1.lastError).toContain('原因は特定できていません');
+ expect(store.yne_plus_jev_local_v1.lastError).not.toContain('接続許可を確認');
+});
+
+
+it('エラー画面から再試行すると設定画面を開かず停止を解除し通信を再開する',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={key:'test-key',stopped:true,failures:5,blockedUntil:Date.now()+600000,lastError:'通信エラー'};
+ const settings=structuredClone(store.yne_plus_settings_v2);
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ expect(requests).toHaveLength(0);
+ const content=document.querySelector('#yne-plus-error-dialog')!.firstElementChild!.shadowRoot!;
+ const retry=Array.from(content.querySelectorAll('button')).find(b=>b.textContent==='再試行')!;
+ retry.click();retry.click();await vi.advanceTimersByTimeAsync(1000);
+ expect(document.querySelector('#yne-plus-error-dialog')).toBeNull();
+ expect(document.querySelector('#yne-plus-ui')).toBeNull();
+ expect(store.yne_plus_jev_local_v1).toMatchObject({key:'test-key',stopped:false,failures:0,blockedUntil:0,lastError:''});
+ expect(store.yne_plus_settings_v2).toEqual(settings);
+ expect(requests).toHaveLength(1);
+ requests[0].onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.9}}}),responseHeaders:''});
+ await vi.advanceTimersByTimeAsync(1000);
+ expect(document.querySelectorAll('[data-yne-plus-hidden]')).toHaveLength(2);
+});
+
+it('Ollayaではキー欄を隠し、サーバーURLを端末内だけに保存する',async()=>{
+ await boot();const provider=root.querySelector<HTMLSelectElement>('[aria-label="AIの接続先"]')!;
+ provider.value='ollaya';provider.dispatchEvent(new Event('change',{bubbles:true}));
+ await vi.advanceTimersByTimeAsync(10);
+ expect(root.querySelector<HTMLInputElement>('input[type=password]')!.parentElement!.hidden).toBe(true);
+ const base=root.querySelector<HTMLInputElement>('[aria-label="OllayaサーバーURL"]')!;
+ base.value='http://localhost:23456';base.dispatchEvent(new Event('input',{bubbles:true}));await vi.advanceTimersByTimeAsync(600);
+ expect(store.yne_plus_jev_local_v1.profiles.ollaya.baseUrl).toBe('http://localhost:23456');
+ expect(JSON.stringify(store.yne_plus_settings_v2)).not.toContain('23456');
+});
+it('接続先を切り替えてもJevの保存済みキーを別サービスに引き継がない',async()=>{
+ store.yne_plus_jev_local_v1={key:'jev-only'};await boot();
+ const provider=root.querySelector<HTMLSelectElement>('[aria-label="AIの接続先"]')!;
+ provider.value='openai';provider.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(10);
+ expect(store.yne_plus_jev_local_v1.profiles.openai.key).toBe('');
+ expect(store.yne_plus_jev_local_v1.profiles.jev.key).toBe('jev-only');
+ expect(root.querySelector<HTMLInputElement>('[aria-label="OpenAI APIキー"]')!.placeholder).not.toContain('登録済み');
+ provider.value='jev';provider.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(10);
+ expect(root.querySelector<HTMLInputElement>('[aria-label="Jev APIキー"]')!.placeholder).toContain('登録済み');
+});
+it('Ollayaでキーなしの判定要求を送りnoulの結果を反映する',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={provider:'ollaya',profiles:{ollaya:{baseUrl:'http://localhost:23456',model:'laya'}}};
+ await boot();await vi.advanceTimersByTimeAsync(1000);expect(requests.length).toBeGreaterThan(0);
+ expect(requests[0].url).toBe('http://localhost:23456/v1/systemone');expect(requests[0].headers.Authorization).toBeUndefined();
+ expect(JSON.parse(requests[0].data).model).toBe('laya');
+ for(const request of requests)request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.9}}})});
+ await vi.advanceTimersByTimeAsync(200);expect(document.querySelectorAll('[data-yne-plus-hidden]').length).toBeGreaterThan(0);
+});
+it('Ollayaの指定URLで一覧を取得し、モデルを選ぶまでは判定を始めない',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={provider:'ollaya',profiles:{ollaya:{baseUrl:'http://localhost:23456'}}};
+ const permission=vi.fn().mockResolvedValue(true),list=vi.fn().mockResolvedValue(['laya','winnow:e4b']);
+ await boot({requestAIOrigin:permission,listAIModels:list});
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='モデル一覧を取得')!.click();
+ await vi.advanceTimersByTimeAsync(200);
+ expect(permission).toHaveBeenCalledWith('ollaya','http://localhost:23456');expect(list).toHaveBeenCalledWith('http://localhost:23456');
+ const model=root.querySelector<HTMLSelectElement>('[aria-label="AIモデル"]')!;
+ expect([...model.options].map(o=>o.value)).toEqual(['','laya','winnow:e4b']);expect(requests).toHaveLength(0);
+ model.value='laya';model.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(200);
+ expect(store.yne_plus_jev_local_v1.profiles.ollaya.model).toBe('laya');expect(requests.length).toBeGreaterThan(0);
+});
+it('Ollayaの通信許可を拒否したら一覧も記事も送信しない',async()=>{
+ store.yne_plus_jev_local_v1={provider:'ollaya'};const list=vi.fn();
+ await boot({requestAIOrigin:vi.fn().mockResolvedValue(false),listAIModels:list});
+ // Enable the fieldset just as the user would before configuring the connection.
+ const enabled=root.querySelector<HTMLInputElement>('[aria-label="AIを有効にする"]')!;enabled.checked=true;enabled.dispatchEvent(new Event('change',{bubbles:true}));
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='モデル一覧を取得')!.click();await vi.advanceTimersByTimeAsync(200);
+ expect(list).not.toHaveBeenCalled();expect(requests).toHaveLength(0);
+});
+
+it.each([
+ ['ollaya',401,'認証・アクセス制限',false],
+ ['clef',403,'Workers AI',true],
+ ['ollaya',404,'モデル一覧を再取得',false],
+ ['openai',429,'請求設定',false],
+] as const)('%s HTTP %sの保存とエラー画面が接続先に合う',async(provider,status,advice,focusKey)=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={provider,profiles:{[provider]:{key:'test-key',accountId:'a'.repeat(32),model:provider==='ollaya'?'laya':provider==='clef'?'clef':'gpt-6-luna'}}};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ for(const request of requests)request.onload({status,responseText:JSON.stringify({error:{code:'insufficient_quota'}})});
+ await vi.advanceTimersByTimeAsync(100);
+ expect(store.yne_plus_jev_local_v1.stopped).toBe(true);expect(store.yne_plus_jev_local_v1.errorProvider).toBe(provider);
+ document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.close();menus['Y!News Filter Plus 設定']();
+ const content=document.querySelector('#yne-plus-error-dialog')!.firstElementChild!.shadowRoot!;
+ expect(content.textContent).toContain(advice);
+ expect(content.querySelector('button')!.textContent).toBe(focusKey?'閉じてAPIキーを設定':'閉じて設定を開く');
+});
+it.each([
+ ['null','format'],
+ [JSON.stringify({answers:[{name:'q0',type:'refusal'}]}),'refusal'],
+] as const)('OpenAIの不正応答・拒否をキャッシュせず停止する (%s)',async(responseText,kind)=>{
+ Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiConditions:['科学']});
+ store.yne_plus_jev_local_v1={provider:'openai',profiles:{openai:{key:'test'}}};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ for(const request of requests)request.onload({status:200,responseText});await vi.advanceTimersByTimeAsync(100);
+ expect(store.yne_plus_jev_local_v1.errorKind).toBe(kind);expect(store.yne_plus_jev_local_v1.stopped).toBe(true);
+ expect(Object.keys(store.yne_plus_jev_cache_v1||{})).toHaveLength(0);expect(document.querySelectorAll('[data-yne-plus-hidden]')).toHaveLength(0);
+});
+it('モデル一覧の古い失敗が切替後の設定画面を上書きしない',async()=>{
+ store.yne_plus_jev_local_v1={provider:'ollaya'};Object.assign(store.yne_plus_settings_v2,{aiEnabled:true});
+ let rejectList:(error:Error)=>void=()=>{};
+ await boot({requestAIOrigin:async()=>true,listAIModels:()=>new Promise((_resolve,reject)=>{rejectList=reject;})});
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='モデル一覧を取得')!.click();await vi.advanceTimersByTimeAsync(1);
+ const provider=root.querySelector<HTMLSelectElement>('[aria-label="AIの接続先"]')!;
+ provider.value='jev';provider.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(10);
+ rejectList(Error('古い一覧取得の失敗'));await vi.advanceTimersByTimeAsync(10);
+ expect(root.textContent).not.toContain('古い一覧取得の失敗');expect(store.yne_plus_jev_local_v1.provider).toBe('jev');
+});
+
+it('遅れて完了したキャッシュ読み込みが新しいハイライトを取り消さない',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiInterests:['文化']});
+ store.yne_plus_jev_local_v1={key:'test-key'};
+ let hold=false,release:()=>void=()=>{},waiting=false;
+ await boot({}, {getValue:async(k:string,f:any)=>{
+  const snapshot=structuredClone(store[k]??f);
+  if(hold&&k==='yne_plus_jev_cache_v1'){hold=false;waiting=true;return new Promise(resolve=>{release=()=>resolve(snapshot);});}
+  return snapshot;
+ }});
+ await vi.advanceTimersByTimeAsync(1000);expect(requests.length).toBeGreaterThan(0);
+ const removed:string[]=[];const original=Element.prototype.removeAttribute;
+ vi.spyOn(Element.prototype,'removeAttribute').mockImplementation(function(this:Element,name){if(name==='data-yne-plus-highlight')removed.push(this.textContent||'');return original.call(this,name);});
+ hold=true;window.dispatchEvent(new Event('focus'));await vi.advanceTimersByTimeAsync(1);expect(waiting).toBe(true);
+ for(const request of requests)request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.95}}})});
+ await vi.advanceTimersByTimeAsync(200);
+ release();await vi.advanceTimersByTimeAsync(500);
+ expect(document.querySelector('[data-yne-plus-highlight]')).not.toBeNull();
+ expect(removed).toEqual([]);
+});
+
+it('記事識別情報の変化による解除と再付与を同じURLの表示ログに残す',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiInterests:['文化']});
+ store.yne_plus_jev_local_v1={key:'test-key'};
+ const copy=vi.fn();await boot({}, {setClipboard:copy});await vi.advanceTimersByTimeAsync(1000);
+ for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.97}}})});
+ await vi.advanceTimersByTimeAsync(200);
+ const card=document.querySelector('[data-yne-plus-highlight]')!,link=card.querySelector('a')!;
+ const original=link.textContent;link.textContent=original+' 7';await vi.advanceTimersByTimeAsync(200);
+ expect(card.hasAttribute('data-yne-plus-highlight')).toBe(false);
+ link.textContent=original;await vi.advanceTimersByTimeAsync(200);
+ expect(card.hasAttribute('data-yne-plus-highlight')).toBe(true);
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();await vi.advanceTimersByTimeAsync(1);
+ const tsv=copy.mock.calls.at(-1)![0];
+ expect(tsv).toContain('表示変更ログ');expect(tsv).toContain('記事識別情報が変更');
+ expect(tsv).toContain('ハイライト解除：現在の記事識別情報に対応する有効な判定なし');
+ expect(tsv).toContain('ハイライト付与：判定値=[0.97]');
+});
+it('記事要素の差し替えと外部からの属性解除を記録して判定結果を再適用する',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiInterests:['文化']});
+ store.yne_plus_jev_local_v1={key:'test-key'};
+ const copy=vi.fn();await boot({}, {setClipboard:copy});await vi.advanceTimersByTimeAsync(1000);
+ for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.97}}})});await vi.advanceTimersByTimeAsync(200);
+ const card=document.querySelector('[data-yne-plus-highlight]')!;
+ card.removeAttribute('data-yne-plus-highlight');await vi.advanceTimersByTimeAsync(200);
+ expect(card.hasAttribute('data-yne-plus-highlight')).toBe(true);
+ const replacement=card.cloneNode(true) as Element;replacement.removeAttribute('data-yne-plus-highlight');card.replaceWith(replacement);
+ await vi.advanceTimersByTimeAsync(200);expect(replacement.hasAttribute('data-yne-plus-highlight')).toBe(true);
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();await vi.advanceTimersByTimeAsync(1);
+ const tsv=copy.mock.calls.at(-1)![0];
+ expect(tsv).toContain('直前のscanと異なるハイライト属性を検出：なし');
+ expect(tsv).toContain('記事要素がDOMから取り外された');expect(tsv).toContain('同じURLの新しい記事要素を検出');
+});
+
+it('Yahooの記事カードでコメント件数が遅れて追加・更新されても黄色を外さず再問い合わせしない',async()=>{
+ const title='中国政府系ハッカー「Storm―0940」AI悪用し侵入 3時間で接続権限を奪取';
+ document.body.innerHTML=`<main><ul><li data-ual-view-type="list"><div><a href="https://news.yahoo.co.jp/articles/storm"><div><img></div><div><div class="headline">${title}</div><div><div class="metadata"><span class="publisher">産経新聞</span><time>10/23(金) 8:52</time></div></div></div></a></div></li></ul></main>`;
+ Object.assign(store.yne_plus_settings_v2,{rows:[],aiEnabled:true,aiInterests:['AI']});store.yne_plus_jev_local_v1={key:'test-key'};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.94}}})});
+ await vi.advanceTimersByTimeAsync(200);
+ const card=document.querySelector('li')!;expect(card.hasAttribute('data-yne-plus-highlight')).toBe(true);
+ const count=requests.length,removed=vi.spyOn(card,'removeAttribute');
+ const comment=document.createElement('span');comment.textContent='6';document.querySelector('.metadata')!.prepend(comment);
+ await vi.advanceTimersByTimeAsync(300);
+ comment.textContent='7';document.querySelector('time')!.textContent='3時間前';
+ await vi.advanceTimersByTimeAsync(300);
+ expect(card.hasAttribute('data-yne-plus-highlight')).toBe(true);expect(removed).not.toHaveBeenCalledWith('data-yne-plus-highlight');expect(requests).toHaveLength(count);
+ expect(JSON.parse(requests[0].data).state.news_text).toBe(title);
+ // 本当の見出し変更は再判定する。記事中の数字もそのまま使う。
+ document.querySelector('.headline')!.textContent=title+' 続報';await vi.advanceTimersByTimeAsync(300);
+ expect(card.hasAttribute('data-yne-plus-highlight')).toBe(false);expect(requests.length).toBeGreaterThan(count);
 });

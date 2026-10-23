@@ -17,7 +17,7 @@ async function call(type:string,values:Record<string,unknown>={}){
  if(!isConnected())throw Error(disconnectedMessage);
  try{
   const r=await chrome.runtime.sendMessage({type,...values});
-  if(!r?.ok)throw Error(r?.error||'拡張機能との接続が切れました。ページを再読み込みしてください');return r.value;
+  if(!r?.ok)throw Object.assign(Error(r?.error||'拡張機能との接続が切れました。ページを再読み込みしてください'),r?.details||{});return r.value;
  }catch(e){
   if(/Extension context invalidated/i.test(String(e))||!isConnected()){invalidate();throw Error(disconnectedMessage);}
   throw e;
@@ -29,14 +29,16 @@ export const GM={
  setValue:(key:string,value:unknown)=>call('SET',{key,value}),
  registerMenuCommand:async(name:string,fn:()=>void)=>{menus.set(name,fn);},
  setClipboard:async(text:string)=>{await navigator.clipboard.writeText(text);},
- xmlHttpRequest:(r:any)=>{void call('NETWORK',{request:{method:r.method,url:r.url,data:r.data,timeout:r.timeout}}).then(value=>r.onload?.(value),e=>e.message==='timeout'?r.ontimeout?.():r.onerror?.(e));}
+ xmlHttpRequest:(r:any)=>{void call('NETWORK',{request:{method:r.method,url:r.url,data:r.data,timeout:r.timeout,connection:r.connection}}).then(value=>r.onload?.(value),e=>e.message==='timeout'?r.ontimeout?.():r.onerror?.(e));}
 };
 export const bridge={
  isConnected,
+ requestAIOrigin:(provider:string,baseUrl:string)=>call('AI_PERMISSION',{provider,baseUrl}),
+ listAIModels:(baseUrl:string)=>call('AI_MODELS',{baseUrl}),
  updateBadge:(count:number,error='')=>call('BADGE',{count,error}),
  saveSettings:(value:unknown,reason:string,expected?:unknown)=>call('SAVE',{value,reason,expected}),
  sync:()=>call('SYNC'),syncStatus:()=>call('SYNC_STATUS'),setSyncEnabled:(enabled:boolean)=>call('SYNC_ENABLED',{enabled}),
  resolve:(doc:unknown)=>call('RESOLVE',{doc}),openReport:(html:string)=>call('REPORT',{html}),
- onSettingsChanged:(fn:()=>void)=>chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes.yne_plus_settings_v2)fn();})
+ onSettingsChanged:(fn:()=>void)=>chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.yne_plus_settings_v2||changes.yne_plus_jev_local_v1))fn();})
 };
 chrome.runtime.onMessage.addListener((m,_sender,respond)=>{if(m.type==='OPEN_SETTINGS'){const open=menus.get('Y!News Filter Plus 設定');open?.();respond({opened:!!open});}});
