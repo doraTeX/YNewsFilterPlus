@@ -1,6 +1,6 @@
-# Cloudflare Clef / Clef-flash の設定方法
+# Cloudflare Clef の設定方法
 
-Y!News Filter PlusでCloudflareのAI判定を使うには、Cloudflareの「アカウントID」と、Workers AIにアクセスできる「APIトークン」を用意します。独自ドメインの登録やWorkerのプログラム作成は、この拡張の設定には必要ありません。
+Y!News Filter PlusでCloudflareのAI判定を使うには、Cloudflareの「アカウントID」と、Workers AIにアクセスできる「APIトークン」を用意します。
 
 ## 1. Cloudflareでアカウントを用意する
 
@@ -17,7 +17,7 @@ Y!News Filter PlusでCloudflareのAI判定を使うには、Cloudflareの「ア�
 | CloudflareアカウントID | Account ID |
 | APIトークン | API Token |
 
-アカウントIDは32桁の英数字です。アカウントの表示名やメールアドレスを入力する欄ではありません。
+アカウントIDは32桁の英数字です。
 
 ## 3. APIトークンを作成する
 
@@ -29,11 +29,11 @@ Y!News Filter PlusでCloudflareのAI判定を使うには、Cloudflareの「ア�
 4. 「アカウントリソース」は「含む」にして、手順1で選んだアカウントを指定します。
 5. 内容を確認して作成し、表示されたAPIトークンをコピーします。
 
-トークンは拡張の設定欄に直接入力してください。スクリーンショットや問い合わせ文にトークン全文を載せないでください。
+トークンは拡張の設定欄に直接入力してください。
 
 ## 4. 拡張に入力する
 
-1. Y!News Filter Plusの設定を開き、「AIによるハイライト/除外判定」を有効にします。
+1. Y!News Filter Plusの設定を開き、「AIによるハイライト/除外判定」の「AI判定を利用」をオンにします。
 2. 「利用するAI」の接続先に **Cloudflare Clef / Clef-flash** を選びます。
 3. APIトークン欄に手順3のトークンを入力します。
 4. 「CloudflareアカウントID」に同じアカウントのAccount IDを入力します。

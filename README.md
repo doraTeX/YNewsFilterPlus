@@ -2,6 +2,14 @@
 
 Yahoo!ニュースの記事一覧を、キーワード、または AIによる関連性判定でハイライト・除外する Chrome 拡張です。Yahoo! JAPAN とは無関係な非公式のソフトウェアです。
 
+## スクリーンショット
+
+![非表示にしたキーワードの確認](docs/images/screenshot-1.png)
+
+![見たくない記事をキーワードで非表示](docs/images/screenshot-2.png)
+
+![AIで記事の「意味」を判定](docs/images/screenshot-3.png)
+
 ## 機能
 
 - **キーワード除外**：指定した語を含む記事カードを非表示にします。全角・半角、アクセント、中黒の有無などの表記ゆれを吸収して照合します。
@@ -28,7 +36,7 @@ Clef・OpenAIでは「この接続先への通信を許可」を押し、ブラ�
 
 接続仕様：[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions)。
 
-Cloudflareの設定手順は [Clef / Clef-flash の設定ガイド](docs/CLOUDFLARE_SETUP.md) をご覧ください。
+設定手順： [Jev](docs/JEV_SETUP.md) ／ [OpenAI Decisions](docs/OPENAI_DECISIONS_SETUP.md) ／ [Cloudflare Clef](docs/CLOUDFLARE_SETUP.md)
 
 ## 導入
 
