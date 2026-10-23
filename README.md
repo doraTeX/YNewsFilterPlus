@@ -4,11 +4,11 @@ Yahoo!ニュースの記事一覧を、キーワード、または AIによる�
 
 ## スクリーンショット
 
-![非表示にしたキーワードの確認](docs/images/screenshot-1.png)
-
 ![見たくない記事をキーワードで非表示](docs/images/screenshot-2.png)
 
 ![AIで記事の「意味」を判定](docs/images/screenshot-3.png)
+
+![非表示にしたキーワードの確認](docs/images/screenshot-1.png)
 
 ## 機能
 

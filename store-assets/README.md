@@ -9,10 +9,7 @@
 ## 画像
 
 - `icon-128.png`：新しいストアアイコン。
-- `screenshots/01-highlight.jpg`：記事ハイライトと非表示条件の一時解除メニュー。
-- `screenshots/02-ai-settings.jpg`：AIの興味キーワード、しきい値、本文追加判定の設定。
-
-スクリーンショットは実際の拡張画面を撮影した1280×800のJPEGです。ニュース内容は撮影時点のものです。新しいAI接続先を示す画面と判定詳細の画面は、追加撮影候補です。
+- スクリーンショット：公開用の画像は `../docs/images/` の `screenshot-1.png`〜`screenshot-3.png`（1280×800、アルファなしPNG）です。READMEとストア掲載の両方でこれを使います。
 
 公式画像仕様：https://developer.chrome.com/docs/webstore/images#screenshots
 
