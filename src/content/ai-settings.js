@@ -4,8 +4,8 @@ export function connectionUI({parent,text,button,local,bridge,status,applySettin
  const initial=(value=local())=>({provider:providerOf(value),profiles:Object.fromEntries(Object.keys(PROVIDERS).map(id=>[id,profileOf(value,id)]))});
  let drafts=initial(),baseline=JSON.stringify(drafts),shown=drafts.provider,revision=0,forceSave=false;
  const box=text('div','',parent,'ai-connection');
- text('h3','AIの接続先（この端末のみ）',box);
- const providerLabel=text('label','接続先',box),provider=text('select','',providerLabel);provider.setAttribute('aria-label','AIの接続先');
+ text('h3','利用するAI',box);
+ const providerLabel=text('label','接続先',box),provider=text('select','',providerLabel);provider.setAttribute('aria-label','利用するAI');
  for(const [value,label]of Object.entries(PROVIDERS)){const o=text('option',label,provider);o.value=value;}provider.value=shown;
  const keyRow=text('div','',box);keyRow.style.cssText='display:flex;align-items:center;gap:16px';
  const key=text('input','',keyRow);key.type='password';key.autocomplete='off';key.style.cssText='flex:1;min-width:0';

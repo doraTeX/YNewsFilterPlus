@@ -205,7 +205,7 @@ it('エラー画面から再試行すると設定画面を開かず停止を解�
 });
 
 it('Ollayaではキー欄を隠し、サーバーURLを端末内だけに保存する',async()=>{
- await boot();const provider=root.querySelector<HTMLSelectElement>('[aria-label="AIの接続先"]')!;
+ await boot();const provider=root.querySelector<HTMLSelectElement>('[aria-label="利用するAI"]')!;
  provider.value='ollaya';provider.dispatchEvent(new Event('change',{bubbles:true}));
  await vi.advanceTimersByTimeAsync(10);
  expect(root.querySelector<HTMLInputElement>('input[type=password]')!.parentElement!.hidden).toBe(true);
@@ -216,7 +216,7 @@ it('Ollayaではキー欄を隠し、サーバーURLを端末内だけに保存�
 });
 it('接続先を切り替えてもJevの保存済みキーを別サービスに引き継がない',async()=>{
  store.yne_plus_jev_local_v1={key:'jev-only'};await boot();
- const provider=root.querySelector<HTMLSelectElement>('[aria-label="AIの接続先"]')!;
+ const provider=root.querySelector<HTMLSelectElement>('[aria-label="利用するAI"]')!;
  provider.value='openai';provider.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(10);
  expect(store.yne_plus_jev_local_v1.profiles.openai.key).toBe('');
  expect(store.yne_plus_jev_local_v1.profiles.jev.key).toBe('jev-only');
@@ -288,7 +288,7 @@ it('モデル一覧の古い失敗が切替後の設定画面を上書きしな�
  let rejectList:(error:Error)=>void=()=>{};
  await boot({requestAIOrigin:async()=>true,listAIModels:()=>new Promise((_resolve,reject)=>{rejectList=reject;})});
  Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='モデル一覧を取得')!.click();await vi.advanceTimersByTimeAsync(1);
- const provider=root.querySelector<HTMLSelectElement>('[aria-label="AIの接続先"]')!;
+ const provider=root.querySelector<HTMLSelectElement>('[aria-label="利用するAI"]')!;
  provider.value='jev';provider.dispatchEvent(new Event('change',{bubbles:true}));await vi.advanceTimersByTimeAsync(10);
  rejectList(Error('古い一覧取得の失敗'));await vi.advanceTimersByTimeAsync(10);
  expect(root.textContent).not.toContain('古い一覧取得の失敗');expect(store.yne_plus_jev_local_v1.provider).toBe('jev');
@@ -365,4 +365,32 @@ it('Yahooの記事カードでコメント件数が遅れて追加・更新さ�
  // 本当の見出し変更は再判定する。記事中の数字もそのまま使う。
  document.querySelector('.headline')!.textContent=title+' 続報';await vi.advanceTimersByTimeAsync(300);
  expect(card.hasAttribute('data-yne-plus-highlight')).toBe(false);expect(requests.length).toBeGreaterThan(count);
+});
+
+
+it.each(['jev','clef','openai','ollaya'])('%sの未設定をピンク背景と注意書き・エラー状況で示す',async provider=>{
+ store.yne_plus_jev_local_v1={provider};await boot();
+ const section=root.querySelector<HTMLElement>('.jev-section')!;
+ expect(section.querySelector('summary')!.textContent).toContain('AIによるハイライト/除外判定');
+ expect(section.style.backgroundColor).toBe('rgb(255, 240, 243)');
+ expect(section.querySelector(':scope > [role=alert]')!.textContent).toBe('利用AIが未設定のため機能しません');
+ expect(section.querySelector('fieldset [role=alert]')!.textContent).toContain('キーワード設定は適用されません');
+ expect(section.textContent).not.toContain('確認完了。未判定の記事はありません');
+ expect(section.textContent).not.toContain('この端末のみ');
+});
+it('設定済みAIでは未設定警告を消し、キー削除時に復元する',async()=>{
+ store.yne_plus_jev_local_v1={key:'test-key'};
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true});await boot();
+ const section=root.querySelector<HTMLElement>('.jev-section')!,warning=section.querySelector<HTMLElement>(':scope > [role=alert]')!;
+ expect(warning.hidden).toBe(true);expect(section.style.backgroundColor).toBe('');
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='APIキーを削除')!.click();await vi.advanceTimersByTimeAsync(200);
+ expect(warning.hidden).toBe(false);expect(section.style.backgroundColor).toBe('rgb(255, 240, 243)');
+ expect(section.querySelector('fieldset [role=alert]')!.textContent).toContain('利用AIが未設定');
+});
+it('設定済みでも認証エラーで停止中ならブロック全体をエラー表示にする',async()=>{
+ store.yne_plus_jev_local_v1={key:'test-key',stopped:true,lastError:'HTTP 401 認証失敗'};
+ await boot();const section=root.querySelector<HTMLElement>('.jev-section')!;
+ expect(section.style.backgroundColor).toBe('rgb(255, 240, 243)');
+ expect(section.querySelector(':scope > [role=alert]')!.textContent).toContain('利用AIのエラー');
+ expect(section.querySelector('fieldset [role=alert]')!.textContent).toContain('HTTP 401');
 });

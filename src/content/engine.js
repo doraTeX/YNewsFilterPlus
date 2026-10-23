@@ -28,7 +28,7 @@ function addSyncUI({body,text,button,status}){
 // Optional AI integration. Credentials and decisions stay in local GM storage.
 const AI_LOCAL='yne_plus_jev_local_v1', AI_CACHE='yne_plus_jev_cache_v1';
 const AI_TTL=7*24*60*60*1000;
-let aiLocal={enabled:false,key:''}, aiCache={}, aiRunning=false, aiKeyChecking=false, aiStatusElement=null;
+let aiLocal={enabled:false,key:''}, aiCache={}, aiRunning=false, aiKeyChecking=false, aiStatusElement=null, renderAIAvailability=null;
 let aiProgress={done:0,total:0,phase:'待機中'};
 let aiMessage='AIは未設定です。', aiRequests=0, aiEpoch=0;
 let aiStatsElement=null, renderAIBreakdown=null;
@@ -215,10 +215,12 @@ function logAIDecisions(force=false){
 
 
 function aiStatus(message){
-  const error=(aiLocal.stopped||aiLocal.failures>0)&&aiLocal.lastError;
-  aiMessage=aiKeyChecking?'APIキーを確認しています…':error||message;
+  const missing=!connectionReady(aiLocal);
+  const error=missing?'利用AIが未設定のため機能しません。AIによるハイライト・除外キーワード設定は適用されません。利用するAIの設定を完了してください。':aiStats.systemError||((aiLocal.stopped||aiLocal.failures>0)&&(aiLocal.lastError||'AIの利用が停止しています。設定を確認してください。'));
+  aiMessage=aiKeyChecking&&!missing?'APIキーを確認しています…':error||message;
+  renderAIAvailability?.(missing,!!error&&!aiKeyChecking);
   if(aiRunning){aiProgress.phase=aiMessage;renderAIProgress();}
-  if(aiStatusElement?.isConnected){aiStatusElement.textContent=aiMessage;aiStatusElement.style.color=error&&!aiKeyChecking?'#b42318':'';aiStatusElement.style.background=error&&!aiKeyChecking?'#fff0ee':'';aiStatusElement.setAttribute('role',error?'alert':'status');}
+  if(aiStatusElement){aiStatusElement.textContent=aiMessage;aiStatusElement.style.color=error&&!aiKeyChecking?'#b42318':'';aiStatusElement.style.background=error&&!aiKeyChecking?'#fff0ee':'';aiStatusElement.setAttribute('role',error?'alert':'status');}
   renderAIStats();
 }
 async function verifyChangedAPIKey(){
@@ -474,7 +476,13 @@ async function runAI(){
 }
 function addAIUI({body,text,button,status,applySettings}){
   const container=text('details','',body);container.open=true;container.className='jev-section';
-  const summary=text('summary','',container);text('span','意味によるハイライト/除外判定（AI API利用）',summary);
+  const summary=text('summary','',container);text('span','AIによるハイライト/除外判定',summary);
+  const warning=text('p','',container,'notice');warning.setAttribute('role','alert');warning.style.color='#b42318';
+  renderAIAvailability=(missing,error)=>{
+    warning.hidden=!(missing||error);
+    warning.textContent=missing?'利用AIが未設定のため機能しません':'利用AIのエラーにより正常に判定できません。下の状況表示を確認してください。';
+    container.style.backgroundColor=missing||error?'#fff0f3':'';
+  };
   const section=text('fieldset','',container);section.className='jev-controls';
   text('p','条件を1行に1つ入力してください。',section,'hint');
   text('h3','興味のあるキーワード',section);
@@ -518,7 +526,7 @@ function addAIUI({body,text,button,status,applySettings}){
     await aiLock(async()=>{const old=await GM.getValue(AI_LOCAL,{});const profiles={...old.profiles,[id]:{...profileOf(old,id),key:''}};aiEpoch++;aiLocal={...old,profiles,...(id==='jev'?{key:''}:{})};await GM.setValue(AI_LOCAL,aiLocal);});aiStatus('APIキーを削除しました。');scan();
   }});apiKeyInput=connectionSettings.key;
   text('p','キャッシュは7日間、最大2,000件（容量上限も適用）。接続先・モデルごとに分離します。同時問い合わせ数は下の設定で変更できます。',section,'hint');
-  aiStatusElement=text('p',aiMessage,section,'notice');aiStatusElement.setAttribute('role','status');
+  aiStatusElement=text('p',aiMessage,section,'notice');aiStatusElement.setAttribute('role','status');aiStatus(aiMessage);
   const usageHeading=text('h3','このページのAI使用量',section);usageHeading.style.cssText='font-size:17px;font-weight:700;margin:24px 0 10px;color:#142b45';
   aiStatsElement=text('table','',section,'usage-table');aiStatsElement.setAttribute('aria-label','このページのAI使用量');inspectAITargets();
   text('p','※このタブからの通信のみ集計。キャッシュ利用・本文取得はトークンを加算しません。',section,'hint');
