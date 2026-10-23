@@ -4,7 +4,7 @@
 指定した語を含む記事を一覧から非表示にします。全角・半角、アクセント、中黒の有無などの表記ゆれを吸収して照合します。
 
 ・AIによるハイライト／除外判定（任意）
-「興味のあるキーワード」に関連する記事をハイライトし、「興味のないキーワード」に関連する記事を除外します。見出しだけでは判断が曖昧な記事は、本文冒頭も取得して追加判定できます。利用するAIは、Jev、OpenAI Decisions、Cloudflare Clef / Clef-flashから選べます。
+「興味のあるキーワード」に関連する記事をハイライトし、「興味のないキーワード」に関連する記事を除外します。見出しだけでは判断が曖昧な記事は、本文冒頭も取得して追加判定できます。利用するAIは、Jev、OpenAI Decisions、Cloudflare Clefから選べます。
 
 ・Chrome 同期
 キーワードと判定条件を、同じ Google アカウントの Chrome 間で同期します。複数の端末で同時に編集して競合した場合も自動では上書きせず、内容を比べて選べます。
@@ -16,20 +16,20 @@
 1. Yahoo!ニュースを開くと、ページ右上に「○件非表示中」のチップが表示されます。チップかツールバーの拡張アイコンをクリックすると設定画面が開きます。
 2. 「除外キーワード」に、非表示にしたい語を1行に1つずつ入力します。設定は自動で保存されます。
 3. AIを使う場合は「AIによるハイライト/除外判定」を開き、「AI判定を利用」をオンにします。「利用するAI」で接続先を選び、接続設定と興味のある／ないキーワードを入力します。
-4. OpenAI Decisions、Cloudflare Clef / Clef-flashを使う場合は、「この接続先への通信を許可」を押し、Chromeの確認画面で許可してください。
+4. OpenAI Decisions、Cloudflare Clefを使う場合は、「この接続先への通信を許可」を押し、Chromeの確認画面で許可してください。
 
 ■ 利用するAIの設定
 ・Jev：TypeSafe AIで取得したAPIキーを入力します。
 ・OpenAI Decisions：OpenAI APIキーを入力します。
-・Cloudflare Clef / Clef-flash：CloudflareアカウントIDとWorkers AIのAPIトークンを入力し、モデルを選びます。
+・Cloudflare Clef：CloudflareアカウントIDとWorkers AIのAPIトークンを入力し、モデル（clef／clef-flash）を選びます。
 
 Cloudflareでは、ダッシュボードの「Workers AI」→「Use REST API」でAccount IDを確認し、「Create a Workers AI API Token」からトークンを作成します。権限は、利用するアカウントの「Workers AI → 読み取り」と「Workers AI → 編集」を指定してください。Account IDは32桁の英数字です。
-詳しい手順：https://github.com/doraTeX/YNewsFilterPlus/blob/main/docs/CLOUDFLARE_SETUP.md
+各AIの詳しい設定手順は、GitHubのリポジトリ（YNewsFilterPlus）にある設定ガイドをご覧ください。
 
 AI判定は初期状態では無効です。APIの利用料金は、利用者と選択したサービスとの契約に基づいて発生します。判定結果はモデルや条件によって異なり、誤判定する場合があります。
 
 ■ プライバシー
-AI判定を利用と、記事の見出しと判定条件が選択したAIサービスに送信されます。本文追加判定を有効にした場合は、本文冒頭（最大2,000文字）も送信されます。記事のURLはAIサービスに送信しません。
+AI判定を利用すると、記事の見出しと判定条件が選択したAIサービスに送信されます。本文追加判定を有効にした場合は、本文冒頭（最大2,000文字）も送信されます。記事のURLはAIサービスに送信しません。
 APIキーは端末内にのみ保存し、Chrome同期や設定JSONには含めません。判定キャッシュも同期しません。
 本拡張は開発者のサーバーを持たず、利用者のデータを開発者や広告・解析事業者へ送信しません。通信先はYahoo! JAPANのニュース関連ページと、利用者が選択したAIサービス（TypeSafe AI・OpenAI・Cloudflare）のAPIです。
 
