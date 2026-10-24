@@ -1,3 +1,4 @@
+import {highlightCSS} from '../shared/highlight.js';
 import {aiError,httpError,failureState} from '../shared/ai-errors.js';
 import {defaults,validate,normalize,parseRows,shouldHide,cleanRows} from '../shared/settings.js';
 import {PROVIDERS,providerOf,connection,connectionReady,connectionIdentity,profileOf,requestBody,readDecision} from '../shared/ai.js';
@@ -736,7 +737,7 @@ function updateBadge(count) {
 }
 function updateHighlightStyle(){
   const color=highlightPreview??config.aiHighlightColor;
-  const articleCSS=`[${MARK}]{display:none!important}[${HIGHLIGHT}]{background-color:${color}!important;box-shadow:inset 4px 0 ${color}!important}[${HIGHLIGHT}] a{background-color:transparent!important}`;
+  const articleCSS=highlightCSS(MARK,HIGHLIGHT,color);
   if(css.textContent!==articleCSS)css.textContent=articleCSS;
 }
 function scan() {
