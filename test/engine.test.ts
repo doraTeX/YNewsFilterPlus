@@ -359,7 +359,7 @@ it.each(['clef','clef-flash'])('利用AI %s を表とTSVに表示し、未判定
  const copy=vi.fn(),report=vi.fn();await boot({openReport:report},{setClipboard:copy});
  const click=async(label:string)=>{Array.from(root.querySelectorAll('button')).find(b=>b.textContent===label)!.click();await vi.advanceTimersByTimeAsync(1);};
  await click('判定詳細をTSVでコピー');
- expect(copy.mock.calls.at(-1)![0]).toContain(`Cloudflare Clef / ${model}（判定結果なし）`);expect(copy.mock.calls.at(-1)![0]).not.toContain('不使用（未取得）');
+ expect(copy.mock.calls.at(-1)![0]).toContain(`Cloudflare Clef / ${model}（未判定）`);expect(copy.mock.calls.at(-1)![0]).not.toContain('不使用（未取得）');
  await vi.advanceTimersByTimeAsync(1000);
  expect(requests.length).toBeGreaterThan(0);
  for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({success:true,result:{answers:{q0:{noul:.97}}}})});
@@ -550,7 +550,7 @@ it.each([['jev','jev-1.13.0','Jev'],['openai','gpt-6-luna','OpenAI Decisions'],[
  try{
   Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['文化']});store.yne_plus_jev_local_v1={provider,profiles:{[provider]:{key:'test-key',model,accountId:'a'.repeat(32)}}};
   const copy=vi.fn();await boot({},{setClipboard:copy});const report=async()=>{Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();for(let i=0;i<10;i++)await Promise.resolve();return copy.mock.calls.at(-1)![0];};
-  const before=await report();expect(requests).toHaveLength(0);expect(before).toContain(label+' / '+model+'（判定結果なし）');expect(before).toContain('順番待ちです。');expect(before).toContain('不使用（通常キーワード）');
+  const before=await report();expect(requests).toHaveLength(0);expect(before).toContain(label+' / '+model+'（未判定）');expect(before).not.toContain(label+' / '+model+'（判定結果なし）');expect(before).toContain('順番待ちです。');expect(before).toContain('不使用（通常キーワード）');
   expect(release).toBeTruthy();release();await vi.advanceTimersByTimeAsync(1000);expect(requests.length).toBeGreaterThan(0);const during=await report();expect(during).toContain(label+' / '+model+'（判定結果なし）');expect(during).toContain('見出し通信中：応答を待っています。');
  }finally{if(previous)Object.defineProperty(navigator,'locks',previous);else Reflect.deleteProperty(navigator,'locks');}
 });

@@ -142,7 +142,7 @@ function decisionRows(){
   for(let i=0;i<Math.max(n,1);i++){
    const useBody=bodyApplied(aiCache,key,n,i),usedKey=useBody?bodyCacheKey(key):key;
    const condition=allAIConditions()[i]||'',score=n&&validDecision(entry,n)?entry.scores[i]:null;
-   rows.push({...pendingDetail(key,el,score===null||(!useBody&&bodyTargets(head,n).includes(i)&&!bodyFinished(aiCache,key,n))),記事:item.content,URL:item.url,条件:condition,判定用途:!n?'対象外':isExclusionIndex(i)?'除外':'ハイライト',利用AI:score!==null?aiLabel:aiStats.usedAIs.has(key)?aiStats.usedAIs.get(key)+'（判定結果なし）':bypass?'不使用（'+bypass+'）':aiLabel+'（判定結果なし）',見出しNoul:hasHead?head.scores[i]:null,本文Noul:hasBody&&body.bodyIndices?.includes(i)?body.scores[i]:null,
+   rows.push({...pendingDetail(key,el,score===null||(!useBody&&bodyTargets(head,n).includes(i)&&!bodyFinished(aiCache,key,n))),記事:item.content,URL:item.url,条件:condition,判定用途:!n?'対象外':isExclusionIndex(i)?'除外':'ハイライト',利用AI:score!==null?aiLabel:aiStats.usedAIs.has(key)?aiStats.usedAIs.get(key)+'（判定結果なし）':bypass?'不使用（'+bypass+'）':aiLabel+'（未判定）',見出しNoul:hasHead?head.scores[i]:null,本文Noul:hasBody&&body.bodyIndices?.includes(i)?body.scores[i]:null,
     本文判定に送信したテキスト:hasBody&&body.bodyIndices?.includes(i)?(typeof body.sentText==='string'?body.sentText:'旧キャッシュ：送信テキストの記録なし'):'本文判定なし',
     キーワード除外:keywordHidden.has(el),AI不使用:!!bypass,
     採用:keywordHidden.has(el)?'キーワード除外（AIは不使用）':useBody?'本文':hasHead?'見出し':bypass?'対象外':'未判定',取得元:score===null?(bypass?'対象外':'未取得'):aiStats.acquired.has(usedKey)?'このページでAPI取得':'保存済みキャッシュ',
