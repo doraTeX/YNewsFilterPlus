@@ -1040,7 +1040,7 @@ function editor() {
     finally{closing=false;}
   }
   button('閉じる',closeEditor,footer);
-  panel.addEventListener('cancel',e=>{e.preventDefault();void closeEditor().catch(error=>{status.textContent='自動保存できません: '+error.message;});});
+  panel.addEventListener('cancel',e=>{e.preventDefault();if(root.activeElement?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;void closeEditor().catch(error=>{status.textContent='自動保存できません: '+error.message;});});
   panel.addEventListener('close',()=>{highlightPreview=null;updateHighlightStyle();if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
 }
 await loadAI();

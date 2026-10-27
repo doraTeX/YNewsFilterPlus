@@ -24,6 +24,14 @@ it.each([false,true])('AI利用=%sの未判定記事を通常表示と未取得�
  expect(table.querySelector('[data-filter="other-row"]')!.parentElement!.textContent).toContain(`通常表示 (${aiEnabled?0:1})`);
 });
 it('キーワード除外とChrome同期UIを持ち、Gist入力はない',async()=>{await boot();expect(document.querySelector('[data-yne-plus-hidden]')?.textContent).toContain('科学');expect(root.textContent).toContain('Chrome同期');expect(root.querySelector('[aria-label="Secret Gist"]')).toBeNull();expect(requests).toHaveLength(0);});
+it.each(['textarea','input[type="password"]','input[type="number"]'])('%sにフォーカス中はEscで閉じず、ボタンに移ったら保存後に閉じる',async selector=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true});store.yne_plus_jev_local_v1={key:'test-key'};await boot();
+ const panel=document.querySelector<HTMLDialogElement>('#yne-plus-ui')!,field=root.querySelector<HTMLElement>(selector)!;
+ field.focus();expect(root.activeElement).toBe(field);const event=new Event('cancel',{cancelable:true});panel.dispatchEvent(event);await vi.advanceTimersByTimeAsync(1);
+ expect(event.defaultPrevented).toBe(true);expect(panel.isConnected).toBe(true);expect(panel.open).toBe(true);
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='閉じる')!.focus();panel.dispatchEvent(new Event('cancel',{cancelable:true}));await vi.advanceTimersByTimeAsync(1);
+ expect(panel.isConnected).toBe(false);
+});
 it('設定JSONを読み込みJev設定も移行する',async()=>{
  await boot();const file=root.querySelector<HTMLInputElement>('input[type=file]')!;
  Object.defineProperty(file,'files',{value:[{text:async()=>JSON.stringify({...defaults,rows:['文化'],aiConditions:['スポーツ'],aiInterests:['科学'],aiThreshold:.8,aiConcurrency:7})}]});
