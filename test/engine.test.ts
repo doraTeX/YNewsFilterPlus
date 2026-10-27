@@ -519,3 +519,17 @@ it('保存待ち中にネイティブのcloseが割り込んでも、保存完�
  for(let i=0;i<20;i++)await Promise.resolve();expect(finish).toBeTruthy();dialog.close();expect(dialog.open).toBe(true);expect(dialog.isConnected).toBe(true);
  finish();await vi.advanceTimersByTimeAsync(1);expect(dialog.isConnected).toBe(false);expect(store.yne_plus_settings_v2.rows).toEqual(['保存待ちの入力']);
 });
+
+it.each(['button','native'])('接続切れ後の未保存画面を%sで閉じ、保存の再試行を止める',async mode=>{
+ let connected=true;const save=vi.fn(async()=>{throw Error('Extension context invalidated.');});await boot({isConnected:()=>connected,saveSettings:save});
+ const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-ui')!,area=root.querySelector<HTMLTextAreaElement>('textarea')!;
+ area.value='切断後の入力';area.dispatchEvent(new Event('input',{bubbles:true}));connected=false;
+ if(mode==='button')await closeSettings();else dialog.close();
+ expect(dialog.isConnected).toBe(false);await vi.advanceTimersByTimeAsync(1000);expect(save).not.toHaveBeenCalled();
+});
+it('保存が応答しなくても接続切れ後の閉じる操作で退出できる',async()=>{
+ let connected=true,reject!:(e:Error)=>void;await boot({isConnected:()=>connected,saveSettings:()=>new Promise((_,fail)=>{reject=fail;})});
+ const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-ui')!,area=root.querySelector<HTMLTextAreaElement>('textarea')!;
+ area.value='保存中の入力';area.dispatchEvent(new Event('input',{bubbles:true}));await closeSettings();expect(reject).toBeTruthy();expect(dialog.isConnected).toBe(true);
+ connected=false;await closeSettings();expect(dialog.isConnected).toBe(false);reject(Error('Extension context invalidated.'));await vi.advanceTimersByTimeAsync(1000);expect(document.querySelector('#yne-plus-ui')).toBeNull();
+});

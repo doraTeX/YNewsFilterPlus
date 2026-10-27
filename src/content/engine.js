@@ -900,6 +900,7 @@ function editor() {
   if(panel) { panel.showModal(); return; }
   let editorBaseline=JSON.stringify(config);
   panel=document.createElement('dialog'); panel.id='yne-plus-ui';
+  const editorPanel=panel;let editorDisposed=false;
   for(const [k,v] of Object.entries({width:'min(720px, calc(100vw - 32px))','max-width':'720px','max-height':'calc(100dvh - 40px)',margin:'auto',padding:'0',border:'1px solid #b5c4d4','border-radius':'16px',background:'#fff',color:'#172b42','box-shadow':'0 20px 80px #102a4350',overflow:'auto'}))panel.style.setProperty(k,v,'important');
   const host=document.createElement('div');panel.append(host);const root=host.attachShadow({mode:'closed'});
   const style=document.createElement('style');style.textContent=`
@@ -978,6 +979,7 @@ function editor() {
   checkbox('legacyRate','100%指定でも100件に1件を表示する',advanced);
   text('p','この例外を有効にすると、rate:100 は各100件の末尾、rate:100! は先頭を表示します。',advanced,'hint');
   async function saveDraft(reason='editor-save'){
+    if(editorDisposed)return;
     const next=draft();aiUI.check();
     await exclusive(async()=>{
       const latest=validate(await GM.getValue(KEY,defaults));
@@ -1045,13 +1047,16 @@ function editor() {
   let closing=false,closeApproved=false,editorFocus=area;
   root.addEventListener('focusin',()=>{editorFocus=root.activeElement||editorFocus;});
   async function closeEditor(){
-    if(closing)return;closing=true;
-    try{if(pendingSave&&!dirty)await pendingSave;while(dirty)await applySettings();closeApproved=true;panel.close();}
+    const finish=()=>{if(!editorDisposed&&panel===editorPanel){closeApproved=true;editorPanel.close();}};
+    if(!connected()){finish();return;}
+    if(closing||editorDisposed)return;closing=true;
+    try{if(pendingSave&&!dirty)await pendingSave;while(dirty&&connected()&&!editorDisposed)await applySettings();finish();}
+    catch(error){if(!connected())finish();else throw error;}
     finally{closing=false;}
   }
   button('閉じる',closeEditor,footer);
   panel.addEventListener('cancel',e=>{e.preventDefault();if(root.activeElement?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;void closeEditor().catch(error=>{status.textContent='自動保存できません: '+error.message;});});
-  panel.addEventListener('close',event=>{if(panel!==event.currentTarget)return;if(!closeApproved){panel.showModal();editorFocus?.focus({preventScroll:true});return;}highlightPreview=null;updateHighlightStyle();if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;renderPauseState=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
+  panel.addEventListener('close',event=>{if(panel!==event.currentTarget)return;if(!closeApproved&&connected()){panel.showModal();editorFocus?.focus({preventScroll:true});return;}editorDisposed=true;clearTimeout(saveTimer);saveTimer=null;highlightPreview=null;updateHighlightStyle();panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;renderPauseState=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
 }
 await loadAI();
 setInterval(()=>void runAI(),60000);
