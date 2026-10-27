@@ -13,6 +13,7 @@ beforeEach(()=>{
 });
 afterEach(()=>{for(const cleanup of engineCleanups.splice(0))cleanup();vi.clearAllTimers();vi.useRealTimers();vi.restoreAllMocks();});
 async function boot(overrides:Record<string,any>={},gmOverrides:Record<string,any>={}){let alive=true;engineCleanups.push(()=>{alive=false;});await startEngine({getValue:async(k:string,f:any)=>structuredClone(store[k]??f),setValue:async(k:string,v:any)=>{store[k]=structuredClone(v);},registerMenuCommand:async(n:string,f:()=>void)=>{menus[n]=f;},xmlHttpRequest:(r:any)=>requests.push(r),setClipboard:async()=>{},...gmOverrides},{isConnected:()=>alive,saveSettings:async(v:any)=>{if(saveFailure)throw Error('テスト保存失敗');store.yne_plus_settings_v2=structuredClone(v);},sync:async()=>{},syncStatus:async()=>({enabled:true,message:'同期済み',conflicts:[]}),setSyncEnabled:async()=>{},resolve:async()=>{},openReport:async()=>{},updateBadge:async()=>{},onSettingsChanged:()=>{},...overrides});menus['Y!News Filter Plus 設定']();await Promise.resolve();}
+async function closeSettings(){Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='閉じる')!.click();await vi.advanceTimersByTimeAsync(1);}
 it.each([false,true])('AI利用=%sの未判定記事を通常表示と未取得に分け、キーワード除外は保持する',async aiEnabled=>{
  Object.assign(store.yne_plus_settings_v2,{aiEnabled,aiConditions:['文化']});
  const report=vi.fn();await boot({openReport:report});
@@ -63,7 +64,7 @@ it('進捗表示をOFFからONにして閉じても保存される',async()=>{
  await boot();
  const checkbox=root.querySelector<HTMLInputElement>('[aria-label="AIの進捗ツールチップを表示する"]')!;
  checkbox.checked=true;checkbox.dispatchEvent(new Event('change',{bubbles:true}));
- document.querySelector('dialog')!.close();
+ await closeSettings();
  await vi.advanceTimersByTimeAsync(600);
  expect(store.yne_plus_settings_v2.aiShowProgress).toBe(true);
  menus['Y!News Filter Plus 設定']();
@@ -119,7 +120,7 @@ it.each(['chip','toolbar'])('認証エラーの%sクリックで対処を示し�
  await boot();await vi.advanceTimersByTimeAsync(1000);
  for(const request of requests)request.onload({status:401,responseHeaders:''});
  await vi.advanceTimersByTimeAsync(1000);
- document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.close();
+ await closeSettings();
  if(source==='chip')document.getElementById('yne-plus-badge')!.click();
  else menus['Y!News Filter Plus 設定']();
  const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-error-dialog')!;
@@ -167,7 +168,7 @@ it.each(['chip','toolbar'])('通信エラーでも%s経由で閉じた後に設�
  await boot();await vi.advanceTimersByTimeAsync(1000);
  for(const request of requests)request.onerror({});
  await vi.advanceTimersByTimeAsync(1000);
- document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.close();
+ await closeSettings();
  if(source==='chip')document.getElementById('yne-plus-badge')!.click();
  else menus['Y!News Filter Plus 設定']();
  const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-error-dialog')!;
@@ -245,7 +246,7 @@ it.each([
  for(const request of requests)request.onload({status,responseText:JSON.stringify({error:{code:'insufficient_quota'}})});
  await vi.advanceTimersByTimeAsync(100);
  expect(store.yne_plus_jev_local_v1.stopped).toBe(true);expect(store.yne_plus_jev_local_v1.errorProvider).toBe(provider);
- document.querySelector<HTMLDialogElement>('#yne-plus-ui')!.close();menus['Y!News Filter Plus 設定']();
+ await closeSettings();menus['Y!News Filter Plus 設定']();
  const content=document.querySelector('#yne-plus-error-dialog')!.firstElementChild!.shadowRoot!;
  expect(content.textContent).toContain(advice);
  expect(content.querySelector('button')!.textContent).toBe(focusKey?'閉じてAPIキーを設定':'閉じて設定を開く');
@@ -499,4 +500,22 @@ it('AI条件が空の状態からハイライト条件だけを入力すると�
  expect(requests.length).toBeGreaterThan(0);expect((await table()).querySelectorAll('tbody .pending-row')).toHaveLength(1);
  for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.95}}})});await vi.advanceTimersByTimeAsync(200);
  expect((await table()).querySelectorAll('tbody .highlight-row')).toHaveLength(1);expect(document.querySelector('[data-yne-plus-highlight]')).not.toBeNull();
+});
+
+it('連続Escでcancelが取り消せずcloseが発生しても、入力とフォーカスを保持し保存失敗時に閉じない',async()=>{
+ await boot();const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-ui')!,area=root.querySelector<HTMLTextAreaElement>('textarea')!;
+ area.value='保存前の入力';area.dispatchEvent(new Event('input',{bubbles:true}));area.focus();saveFailure=true;
+ dialog.dispatchEvent(new Event('cancel',{cancelable:true}));dialog.dispatchEvent(new Event('cancel',{cancelable:false}));dialog.close();
+ expect(dialog.open).toBe(true);expect(dialog.isConnected).toBe(true);expect(root.activeElement).toBe(area);expect(area.value).toBe('保存前の入力');
+ await vi.advanceTimersByTimeAsync(600);const close=Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='閉じる')!;close.click();await vi.advanceTimersByTimeAsync(1);
+ expect(dialog.open).toBe(true);expect(area.value).toBe('保存前の入力');expect(root.textContent).toContain('テスト保存失敗');
+ saveFailure=false;close.click();await vi.advanceTimersByTimeAsync(1);expect(dialog.isConnected).toBe(false);expect(store.yne_plus_settings_v2.rows).toEqual(['保存前の入力']);
+});
+it('保存待ち中にネイティブのcloseが割り込んでも、保存完了までダイアログを保持する',async()=>{
+ let finish!:(value?:unknown)=>void;
+ await boot({saveSettings:async(next:any)=>{await new Promise(resolve=>finish=resolve);store.yne_plus_settings_v2=structuredClone(next);}});
+ const dialog=document.querySelector<HTMLDialogElement>('#yne-plus-ui')!,area=root.querySelector<HTMLTextAreaElement>('textarea')!,close=Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='閉じる')!;
+ area.value='保存待ちの入力';area.dispatchEvent(new Event('input',{bubbles:true}));close.focus();dialog.dispatchEvent(new Event('cancel',{cancelable:false}));
+ for(let i=0;i<20;i++)await Promise.resolve();expect(finish).toBeTruthy();dialog.close();expect(dialog.open).toBe(true);expect(dialog.isConnected).toBe(true);
+ finish();await vi.advanceTimersByTimeAsync(1);expect(dialog.isConnected).toBe(false);expect(store.yne_plus_settings_v2.rows).toEqual(['保存待ちの入力']);
 });

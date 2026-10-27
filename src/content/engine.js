@@ -1042,15 +1042,16 @@ function editor() {
   const pauseButton=button('',()=>{togglePaused();status.textContent=paused?'除外/ハイライトを一時停止中です。設定は変わりません。':'除外/ハイライトを再開しました。';},footer);
   renderPauseState=()=>{pauseButton.textContent=paused?'除外/ハイライトを再開':'除外/ハイライトを一時停止';pauseButton.setAttribute('aria-pressed',String(paused));};renderPauseState();
   // 保存の完了を待ってから閉じる。失敗時は入力内容を画面に残す。
-  let closing=false;
+  let closing=false,closeApproved=false,editorFocus=area;
+  root.addEventListener('focusin',()=>{editorFocus=root.activeElement||editorFocus;});
   async function closeEditor(){
     if(closing)return;closing=true;
-    try{if(pendingSave&&!dirty)await pendingSave;while(dirty)await applySettings();panel.close();}
+    try{if(pendingSave&&!dirty)await pendingSave;while(dirty)await applySettings();closeApproved=true;panel.close();}
     finally{closing=false;}
   }
   button('閉じる',closeEditor,footer);
   panel.addEventListener('cancel',e=>{e.preventDefault();if(root.activeElement?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;void closeEditor().catch(error=>{status.textContent='自動保存できません: '+error.message;});});
-  panel.addEventListener('close',()=>{highlightPreview=null;updateHighlightStyle();if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;renderPauseState=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
+  panel.addEventListener('close',event=>{if(panel!==event.currentTarget)return;if(!closeApproved){panel.showModal();editorFocus?.focus({preventScroll:true});return;}highlightPreview=null;updateHighlightStyle();if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;renderPauseState=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
 }
 await loadAI();
 setInterval(()=>void runAI(),60000);
