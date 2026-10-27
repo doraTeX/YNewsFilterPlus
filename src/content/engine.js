@@ -11,6 +11,7 @@ function headersOf(raw){const out={};for(const line of (raw||'').split(/\r?\n/))
 async function exclusive(action){return navigator.locks?.request?navigator.locks.request('ynfp-settings',action):action();}
 async function persistSettings(value,reason,expected){await bridge.saveSettings(validate(value),reason,expected);}
 const connected=()=>bridge.isConnected?.()!==false;
+let debugEnabled=false;const debugState=await bridge.debugState?.().catch(()=>({enabled:false,available:false}));debugEnabled=debugState?.enabled===true;
 async function syncNow(){if(!connected())return;await bridge.sync().catch(e=>{if(connected())console.warn(e);});}
 function addSyncUI({body,text,button,status}){
  const section=text('details','',body);section.dataset.noAutosave='true';text('summary','複数端末間のChrome同期',section);
@@ -214,7 +215,7 @@ function initializeReportFilters(doc){
 async function openDecisionReport(){await bridge.openReport(decisionReportHTML(decisionRows()));}
 
 function logAIDecisions(force=false){
- if(!force&&!config.aiDebug)return;
+ if(!force&&!debugEnabled)return;
  const rows=decisionRows(),changed=[];
  for(const row of rows){const key=JSON.stringify([row.URL,row.記事,row.条件]);const signature=JSON.stringify(row);
   if(force||aiStats.logged.get(key)!==signature)changed.push(row);aiStats.logged.set(key,signature);
@@ -563,7 +564,9 @@ function addAIUI({body,text,button,status,applySettings}){
   const reportActions=text('div','',container,'buttons');reportActions.style.gap='12px';
   button('判定詳細を表で開く',()=>{openDecisionReport();status.textContent='判定詳細の表を別タブで開きました。';},reportActions);
   button('判定詳細をConsoleに出力',()=>{logAIDecisions(true);status.textContent='Consoleに [YNE AI] の判定詳細を出力しました。';},reportActions);
-  const debugLabel=text('label','',reportActions);debugLabel.style.cssText='margin:0;font-size:13px;white-space:nowrap';const debug=document.createElement('input');debug.type='checkbox';debug.checked=!!config.aiDebug;debugLabel.append(debug,document.createTextNode('Consoleに継続出力'));
+  const debugLabel=text('label','',reportActions);debugLabel.style.cssText='margin:0;font-size:13px;white-space:nowrap';const debug=document.createElement('input');debug.type='checkbox';debug.checked=debugEnabled;debug.disabled=debugState?.available===false;debugLabel.dataset.noAutosave='true';debug.setAttribute('aria-label','Consoleに継続出力（デバッグ用）');debugLabel.append(debug,document.createTextNode('Consoleに継続出力（デバッグ用）'));
+  debug.title='通常はOFFで使用してください。ONにすると動作が重くなることがあります。同じタブの再読み込みでは維持します。タブを閉じるとOFFになります。Chrome同期・設定の書き出しには含めません。';
+  debug.onchange=async()=>{const next=debug.checked;debug.disabled=true;try{await bridge.setDebug?.(next);debugEnabled=next;if(next){aiStats.logged.clear();logAIDecisions();}}catch(e){debug.checked=debugEnabled;status.textContent='デバッグ設定を変更できません：'+e.message;}finally{debug.disabled=false;}};
   const copyActions=text('div','',container,'buttons');
   const copyButton=button('判定詳細をTSVでコピー',async()=>{const count=await copyDecisionTSV();status.textContent=`判定詳細 ${count} 行すべてをTSV形式でコピーしました。`;showCopiedToast(copyButton,count);},copyActions);
   const operational=text('fieldset','',container);operational.className='jev-controls';
@@ -582,8 +585,8 @@ function addAIUI({body,text,button,status,applySettings}){
   },runActions);clearCache.style.marginLeft='auto';
   const cacheStatus=text('p','',operational,'hint');cacheStatus.setAttribute('role','status');cacheStatus.setAttribute('aria-live','polite');
   refreshEnabled();
-  return {read:()=>({aiHighlightColor:highlightColor.value,aiInterests:interests.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiConditions:conditions.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiThreshold:Number(threshold.value),aiEnabled:enabled.checked,aiBodyEnabled:bodyEnabled.checked,aiBodyLow:Number(low.value),aiDebug:debug.checked,aiShowProgress:showProgress.checked,aiConcurrency:Number(concurrency.value),aiRequestLimit:Number(requestLimit.value)}),
-    restore:next=>{highlightColor.value=next.aiHighlightColor;interests.value=next.aiInterests.join('\n');conditions.value=next.aiConditions.join('\n');threshold.value=String(next.aiThreshold);enabled.checked=next.aiEnabled;bodyEnabled.checked=next.aiBodyEnabled;low.value=String(next.aiBodyLow);debug.checked=next.aiDebug;showProgress.checked=next.aiShowProgress;concurrency.value=String(next.aiConcurrency);requestLimit.value=String(next.aiRequestLimit);refreshRange(threshold);refreshEnabled();},
+  return {read:()=>({aiHighlightColor:highlightColor.value,aiInterests:interests.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiConditions:conditions.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),aiThreshold:Number(threshold.value),aiEnabled:enabled.checked,aiBodyEnabled:bodyEnabled.checked,aiBodyLow:Number(low.value),aiShowProgress:showProgress.checked,aiConcurrency:Number(concurrency.value),aiRequestLimit:Number(requestLimit.value)}),
+    restore:next=>{highlightColor.value=next.aiHighlightColor;interests.value=next.aiInterests.join('\n');conditions.value=next.aiConditions.join('\n');threshold.value=String(next.aiThreshold);enabled.checked=next.aiEnabled;bodyEnabled.checked=next.aiBodyEnabled;low.value=String(next.aiBodyLow);debug.checked=debugEnabled;showProgress.checked=next.aiShowProgress;concurrency.value=String(next.aiConcurrency);requestLimit.value=String(next.aiRequestLimit);refreshRange(threshold);refreshEnabled();},
     hasNewKey:()=>connectionSettings.changed(),
     check:()=>connectionSettings.check(),
     save:async()=>{const changedKey=connectionSettings.changedKey();await aiLock(async()=>{aiEpoch++;const old=await GM.getValue(AI_LOCAL,{enabled:false,key:''});aiLocal={...connectionSettings.read(old),stopped:false,failures:0,blockedUntil:0,lastError:'',lastErrorAt:'',errorKind:'',errorAdvice:'',errorFocusKey:false};await GM.setValue(AI_LOCAL,aiLocal);});connectionSettings.saved();if(changedKey&&connectionReady(aiLocal))await verifyChangedAPIKey();else aiStatus(aiActive()?'AI判定を有効にしました。':'AI判定オフ。キーワード除外のみ動作します。');}};
@@ -595,7 +598,7 @@ try {
   const raw=protectedSettings??await GM.getValue(LEGACY_KEY,defaults);
   if(!('aiEnabled' in raw)){
     const old=await GM.getValue(AI_LOCAL,{});
-    config=validate({...raw,aiEnabled:raw.aiEnabled??(old.enabled===true),aiBodyEnabled:raw.aiBodyEnabled??(old.bodyEnabled===true),aiBodyLow:raw.aiBodyLow??old.bodyLow??0.3,aiDebug:raw.aiDebug??(old.debug===true)});
+    config=validate({...raw,aiEnabled:raw.aiEnabled??(old.enabled===true),aiBodyEnabled:raw.aiBodyEnabled??(old.bodyEnabled===true),aiBodyLow:raw.aiBodyLow??old.bodyLow??0.3});
   }else config=validate(raw);
   if(protectedSettings===null||JSON.stringify(raw)!==JSON.stringify(config))await persistSettings(config,'migration',validate(protectedSettings??defaults));
 

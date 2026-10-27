@@ -1,7 +1,7 @@
 import {beforeEach,describe,it,expect,vi} from 'vitest';
 import {webcrypto} from 'node:crypto';
 import {defaults,validate,normalize} from '../src/shared/settings.js';
-import {newDoc,heads,encodeDoc,decodeRemote,assertQuota,SETTINGS,HISTORY} from '../src/shared/sync';
+import {newDoc,heads,encodeDoc,decodeRemote,digest,assertQuota,SETTINGS,HISTORY} from '../src/shared/sync';
 import {Store} from '../src/background/store';
 let local:Record<string,any>,remote:Record<string,any>;
 function area(data:()=>Record<string,any>){return {get:async(key:any)=>{const d=data();if(key===null)return structuredClone(d);const ks=typeof key==='string'?[key]:key;return structuredClone(Object.fromEntries(ks.filter((k:string)=>k in d).map((k:string)=>[k,d[k]])));},set:async(value:any)=>Object.assign(data(),structuredClone(value)),remove:async(keys:string[])=>{for(const k of keys)delete data()[k];}};}
@@ -91,4 +91,10 @@ it('連続編集を1履歴にまとめ、5分空いた編集は別履歴にす�
  for(let i=0;i<12;i++)await new Store().save(settings('置換'+i),'json-import');
  expect(local[HISTORY]).toHaveLength(10);
  }finally{clock.mockRestore();}
+});
+
+it('旧設定や旧同期データのaiDebugを無視し、以後の同期・書き出し対象にも含めない',async()=>{
+ const legacy={...defaults,rows:['保持する語'],aiDebug:true};expect(validate(legacy)).not.toHaveProperty('aiDebug');
+ const raw=JSON.stringify({schema:1,clock:{old:1},settings:legacy});const decoded=await decodeRemote({'ynfp:old:0':raw,'ynfp:old:meta':{count:1,hash:await digest(raw)}});expect(decoded[0].settings.rows).toEqual(['保持する語']);expect(decoded[0].settings).not.toHaveProperty('aiDebug');
+ const encoded=await encodeDoc({schema:1,clock:{old:1},settings:legacy as any},'old');expect(JSON.stringify(encoded)).not.toContain('aiDebug');
 });

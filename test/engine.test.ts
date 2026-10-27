@@ -533,3 +533,13 @@ it('保存が応答しなくても接続切れ後の閉じる操作で退出で�
  area.value='保存中の入力';area.dispatchEvent(new Event('input',{bubbles:true}));await closeSettings();expect(reject).toBeTruthy();expect(dialog.isConnected).toBe(true);
  connected=false;await closeSettings();expect(dialog.isConnected).toBe(false);reject(Error('Extension context invalidated.'));await vi.advanceTimersByTimeAsync(1000);expect(document.querySelector('#yne-plus-ui')).toBeNull();
 });
+
+it('デバッグ継続出力は設定を保存せず、同じタブの再ロードだけに引き継ぐ',async()=>{
+ let enabled=false;store.yne_plus_settings_v2.aiDebug=true;const save=vi.fn(async(v:any)=>{store.yne_plus_settings_v2=structuredClone(v);}),setDebug=vi.fn(async(next:boolean)=>{enabled=next;});
+ const bridge={saveSettings:save,debugState:async()=>({enabled,available:true}),setDebug};
+ await boot(bridge);let debug=root.querySelector<HTMLInputElement>('[aria-label="Consoleに継続出力（デバッグ用）"]')!;expect(debug.checked).toBe(false);const before=save.mock.calls.length;
+ debug.click();await vi.advanceTimersByTimeAsync(600);expect(enabled).toBe(true);expect(save).toHaveBeenCalledTimes(before);expect(store.yne_plus_settings_v2).not.toHaveProperty('aiDebug');
+ await closeSettings();menus['Y!News Filter Plus 設定']();debug=root.querySelector<HTMLInputElement>('[aria-label="Consoleに継続出力（デバッグ用）"]')!;expect(debug.checked).toBe(true);
+ await closeSettings();await boot(bridge);expect(root.querySelector<HTMLInputElement>('[aria-label="Consoleに継続出力（デバッグ用）"]')!.checked).toBe(true);
+ await closeSettings();await boot({...bridge,debugState:async()=>({enabled:false,available:true})});expect(root.querySelector<HTMLInputElement>('[aria-label="Consoleに継続出力（デバッグ用）"]')!.checked).toBe(false);
+});

@@ -22,7 +22,7 @@ export function chunks(text:string):string[]{
 }
 export async function digest(s:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(s))),b=>b.toString(16).padStart(2,'0')).join('');}
 export async function encodeDoc(doc:Doc,device:string){
- const text=JSON.stringify(doc),pieces=chunks(text),prefix='ynfp:'+device+':';
+ const text=JSON.stringify({...doc,settings:validate(doc.settings)}),pieces=chunks(text),prefix='ynfp:'+device+':';
  const items:Record<string,unknown>={};pieces.forEach((p,i)=>items[prefix+i]=p);
  items[prefix+'meta']={count:pieces.length,hash:await digest(text)};return items;
 }

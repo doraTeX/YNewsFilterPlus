@@ -1,10 +1,10 @@
 const defaults = {version: 1, rows: [], enabled: true, showPageChip: true, ignoreCase: true,
-  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.8, aiHighlightColor: "#fff3bf", aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiDebug:false, aiShowProgress:false, aiConcurrency:5, aiRequestLimit:200};
+  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.8, aiHighlightColor: "#fff3bf", aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiShowProgress:false, aiConcurrency:5, aiRequestLimit:200};
 function validate(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.rows) ||
       value.rows.some(x => typeof x !== 'string')) throw Error('設定形式が不正です');
   const out = {...defaults};
-  for (const k of ['enabled', 'showPageChip', 'ignoreCase', 'ignoreSeparators', 'legacyRate', 'aiEnabled', 'aiBodyEnabled', 'aiDebug', 'aiShowProgress']) {
+  for (const k of ['enabled', 'showPageChip', 'ignoreCase', 'ignoreSeparators', 'legacyRate', 'aiEnabled', 'aiBodyEnabled', 'aiShowProgress']) {
     if (k in value && typeof value[k] !== 'boolean') throw Error(k + ' は真偽値で指定してください');
     if (k in value) out[k] = value[k];
   }

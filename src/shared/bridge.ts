@@ -33,6 +33,8 @@ export const GM={
 };
 export const bridge={
  isConnected,
+ debugState:async()=>{const tabId=location.protocol==='chrome-extension:'?(await chrome.tabs.getCurrent())?.id:undefined;return call('DEBUG_GET',{tabId});},
+ setDebug:async(enabled:boolean)=>{const tabId=location.protocol==='chrome-extension:'?(await chrome.tabs.getCurrent())?.id:undefined;return call('DEBUG_SET',{tabId,enabled});},
  requestAIOrigin:(provider:string)=>call('AI_PERMISSION',{provider}),
  updateBadge:(count:number,error='')=>call('BADGE',{count,error}),
  saveSettings:(value:unknown,reason:string,expected?:unknown)=>call('SAVE',{value,reason,expected}),

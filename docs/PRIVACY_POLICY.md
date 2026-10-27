@@ -17,6 +17,7 @@ Y!News Filter Plus（以下「本拡張機能」）は、Google Chrome 用の拡
 | 除外キーワード、AI の判定条件（興味のある／ないキーワード）、しきい値などの数値設定、表示設定 | `chrome.storage.local`（端末内）および、Chrome 同期が有効な場合は `chrome.storage.sync` |
 | AI接続先・モデル・アカウントID・APIキー | `chrome.storage.local`（端末内のみ。Chrome 同期や設定 JSON の書き出しには含めません） |
 | AI の判定結果キャッシュ（記事の URL・見出し・判定値）、設定の復元履歴（直近 10 件） | `chrome.storage.local`（端末内のみ） |
+| タブごとのConsole継続出力のON/OFF | `chrome.storage.session`（タブ終了時に削除。Chrome同期・設定JSONには含めません） |
 | 手動で開いた「判定詳細」の表 | `chrome.storage.session`（ブラウザを閉じると消えます） |
 
 ## Chrome 同期について

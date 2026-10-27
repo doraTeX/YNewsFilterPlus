@@ -1,4 +1,5 @@
 import {Store} from './store';
+import {TabDebug} from './tab-debug';
 import {updateToolbarBadge} from './badge';
 import {SETTINGS,HISTORY} from '../shared/sync';
 import {defaults} from '../shared/settings.js';
@@ -6,6 +7,7 @@ import {YAHOO_HOSTS} from '../shared/hosts';
 import {AI_LOCAL,connectionOrigin,migrateRetiredAI} from '../shared/ai.js';
 import {network} from './network';
 const store=new Store();
+const tabDebug=new TabDebug(chrome.storage.session,'ynfp_debug:');
 const keys=new Set([SETTINGS,HISTORY,AI_LOCAL,'yne_plus_jev_cache_v1','yne_plus_v1']);
 const ready=store.queue(async()=>{
  const local=(await chrome.storage.local.get(AI_LOCAL))[AI_LOCAL];
@@ -30,6 +32,13 @@ async function handle(m:any,sender:chrome.runtime.MessageSender){
  if(m.type==='BADGE')return updateToolbarBadge(m.count,sender,m.error);
  await ready;
  switch(m.type){
+ case 'DEBUG_GET':case 'DEBUG_SET':{
+  let tabId=sender.tab?.id;
+  if(tabId===undefined&&sender.url?.startsWith(chrome.runtime.getURL(''))&&Number.isInteger(m.tabId))tabId=m.tabId;
+  if(tabId===undefined)return {enabled:false,available:false};
+  if(m.type==='DEBUG_SET'){if(typeof m.enabled!=='boolean')throw Error('デバッグ設定は真偽値で指定してください');await tabDebug.set(tabId,m.enabled);}
+  return {enabled:await tabDebug.get(tabId),available:true};
+ }
  case 'GET':if(!keys.has(m.key))throw Error('保存キーが不正です');return (await chrome.storage.local.get(m.key))[m.key]??m.fallback;
  case 'SET':if(!keys.has(m.key)||m.key===SETTINGS||m.key===HISTORY)throw Error('保存キーが不正です');await chrome.storage.local.set({[m.key]:m.value});return null;
  case 'SAVE':await store.queue(async()=>{if(m.reason==='migration'&&JSON.stringify(m.value)===JSON.stringify(defaults)&&!(await chrome.storage.local.get(SETTINGS))[SETTINGS])return;await store.save(m.value,m.reason,m.expected);});schedule();return null;
@@ -48,3 +57,5 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
 });
 
 chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.status==='loading'){void chrome.action.setBadgeText({tabId,text:''}).catch(()=>{});void chrome.action.setTitle({tabId,title:'Y!News Filter Plus'}).catch(()=>{});}});
+
+chrome.tabs.onRemoved.addListener(tabId=>{void tabDebug.forget(tabId).catch(()=>{});});
