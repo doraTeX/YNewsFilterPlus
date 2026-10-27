@@ -1,3 +1,4 @@
+import {createPauseControl} from './pause-control.js';
 import {highlightCSS} from '../shared/highlight.js';
 import {aiError,httpError,failureState} from '../shared/ai-errors.js';
 import {defaults,validate,normalize,parseRows,shouldHide,cleanRows} from '../shared/settings.js';
@@ -51,7 +52,7 @@ function traceDisplay(item,message){
 function displayLog(item){return (displayTraces.get(item.url)||[]).join('\n')||'表示変更の記録なし';}
 function displayReason(el){
  if(!config.enabled)return '記事の除外がOFF';
- if(paused)return '一時的に全件表示';
+ if(paused)return '除外/ハイライトを一時停止';
  if(keywordHidden.has(el))return '通常キーワードで除外';
  if(!aiActive())return 'AIが無効またはエラーで停止';
  if(!connectionReady(aiLocal))return '接続先が未設定';
@@ -83,7 +84,7 @@ function renderAIStats(){if(!aiStatsElement?.isConnected)return;
 function aiActive(local=aiLocal){return config.aiEnabled&&!local.stopped;}
 function allAIConditions(){return [...config.aiConditions,...config.aiInterests];}
 function isExclusionIndex(i){return i<config.aiConditions.length;}
-function aiIdleReason(){return !config.enabled?'記事の除外がOFFです。':paused?'一時的に全件表示中です。':!connectionReady(aiLocal)?'接続先の設定が完了するまで、意味によるハイライト・除外は機能しません。':!aiActive()?'このブラウザでAIがOFFです。':!allAIConditions().length?'AIの条件が空です。設定画面で条件を入力してください。':'';}
+function aiIdleReason(){return !config.enabled?'記事の除外がOFFです。':paused?'除外/ハイライトを一時停止中です。':!connectionReady(aiLocal)?'接続先の設定が完了するまで、意味によるハイライト・除外は機能しません。':!aiActive()?'このブラウザでAIがOFFです。':!allAIConditions().length?'AIの条件が空です。設定画面で条件を入力してください。':'';}
 function inspectAITargets(){
  const els=candidates();aiStats.target=els.length;aiStats.keyword=0;aiStats.jevHidden=0;aiStats.jevHighlighted=0;aiStats.cached=0;aiStats.pending=0;aiStats.prior=0;aiStats.fresh=0;const prior=new Set(),fresh=new Set();
  for(const el of els){if(keywordHidden.has(el)){aiStats.keyword++;continue;}if(el.hasAttribute(MARK))aiStats.jevHidden++;if(el.hasAttribute(HIGHLIGHT))aiStats.jevHighlighted++;const item=aiIdentity(el);if(!item)continue;const key=aiKey(item,allAIConditions());
@@ -646,6 +647,8 @@ function candidates() {
     .sort((a,b)=>a.compareDocumentPosition(b)&2 ? 1 : -1);
 }
 let paused=false, timer, panel=null, renderHiddenWords=null, apiKeyInput=null, errorDialog=null;
+let renderPauseState=null;
+function togglePaused(){if(!connected())return;paused=!paused;scan();}
 let hiddenWords=[];
 let keywordHidden=new WeakSet(),keywordMatches=new WeakMap();
 let hiddenWordCounts=new Map();
@@ -720,12 +723,13 @@ function renderHoverWords(){
   }
   if(!words.length){const empty=document.createElement('span');empty.className='empty';empty.textContent='非表示中のワードはありません';hoverList.append(empty);}
 }
+const pauseControl=createPauseControl({toggle:togglePaused,pauseLabel:'除外/ハイライトを一時停止',resumeLabel:'除外/ハイライトを再開'});
 let pointerOverBadge=false;
-function toggleHover(){hoverHost.style.display=config.showPageChip&&(pointerOverBadge||overlay.contains(document.activeElement))?'block':'none';}
+function toggleHover(){const visible=config.showPageChip&&(pointerOverBadge||overlay.contains(document.activeElement));hoverHost.style.display=visible?'block':'none';pauseControl.setVisible(visible);}
 overlay.addEventListener('mouseenter',()=>{pointerOverBadge=true;toggleHover();});
 overlay.addEventListener('mouseleave',()=>{pointerOverBadge=false;toggleHover();});
 overlay.addEventListener('focusin',toggleHover);overlay.addEventListener('focusout',()=>queueMicrotask(toggleHover));
-overlay.append(badge,progressHost,busyHost,errorHost,hoverHost);badge.addEventListener('click',openSettingsOrError);document.body.append(overlay);
+overlay.append(badge,progressHost,busyHost,errorHost,hoverHost,pauseControl.host);badge.addEventListener('click',openSettingsOrError);document.body.append(overlay);
 let toolbarCount=0,toolbarState=null;
 function syncToolbarBadge(){
   const error=activeAIError(),state=JSON.stringify([toolbarCount,error]);
@@ -733,7 +737,8 @@ function syncToolbarBadge(){
 }
 function updateBadge(count) {
   toolbarCount=count;
-  const label=!config.enabled?'除外オフ':paused?'一時表示中':`${count}件非表示中`;
+  pauseControl.update(paused);toggleHover();renderPauseState?.();
+  const label=!config.enabled?'除外オフ':paused?'一時停止中':`${count}件非表示中`;
   if(badge.textContent!==label)badge.textContent=label;
   badge.setAttribute('aria-label',`Y!News Filter Plus: ${label}。設定を開く`);
 }
@@ -1031,7 +1036,8 @@ function editor() {
   },backupButtons);
   file.onchange=async()=>{try{if(!file.files[0])return;if(!confirm('読み込んだ設定で現在の設定を置き換えますか？変更前の設定は、この端末の「保存履歴から復元」で戻せます。'))return;let value=JSON.parse(await file.files[0].text());if(value.yne_words!==undefined)value=JSON.parse(value.yne_words);if(Array.isArray(value))value={...defaults,rows:value,ignoreCase:false,normalization:'legacy',legacyRate:true};const next=validate(value);aiUI.restore(next);area.value=next.rows.join('\n');for(const [k,v]of Object.entries(inputs))v.checked=k==='loose'?next.normalization==='loose':next[k];updateCount();await applySettings('json-import');}catch(e){status.textContent='読み込み失敗: '+e.message;}finally{file.value='';}};
   const footer=text('div','',root,'footer');
-  button(paused?'除外を再開':'一時的に全件表示',()=>{paused=!paused;scan();status.textContent=paused?'一時表示中です。設定は変わりません。':'除外を再開しました。';},footer);
+  const pauseButton=button('',()=>{togglePaused();status.textContent=paused?'除外/ハイライトを一時停止中です。設定は変わりません。':'除外/ハイライトを再開しました。';},footer);
+  renderPauseState=()=>{pauseButton.textContent=paused?'除外/ハイライトを再開':'除外/ハイライトを一時停止';pauseButton.setAttribute('aria-pressed',String(paused));};renderPauseState();
   // 保存の完了を待ってから閉じる。失敗時は入力内容を画面に残す。
   let closing=false;
   async function closeEditor(){
@@ -1041,12 +1047,12 @@ function editor() {
   }
   button('閉じる',closeEditor,footer);
   panel.addEventListener('cancel',e=>{e.preventDefault();if(root.activeElement?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'))return;void closeEditor().catch(error=>{status.textContent='自動保存できません: '+error.message;});});
-  panel.addEventListener('close',()=>{highlightPreview=null;updateHighlightStyle();if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
+  panel.addEventListener('close',()=>{highlightPreview=null;updateHighlightStyle();if(dirty){void applySettings().catch(e=>alert('自動保存できません: '+e.message));}panel.remove();panel=null;renderHiddenWords=null;renderAIBreakdown=null;renderPauseState=null;void syncNow();});document.body.append(panel);panel.showModal();renderAIStats();area.focus({preventScroll:true});area.setSelectionRange(0,0);area.scrollTop=0;panel.scrollTop=0;
 }
 await loadAI();
 setInterval(()=>void runAI(),60000);
 await GM.registerMenuCommand('Y!News Filter Plus 設定',openSettingsOrError);
-await GM.registerMenuCommand('Y!News Filter Plus 一時表示／戻す',()=>{paused=!paused;scan();});
+await GM.registerMenuCommand('Y!News Filter Plus 除外/ハイライト 一時停止／再開',togglePaused);
 scan();
 
 setInterval(()=>void syncNow(),60000);

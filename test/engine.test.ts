@@ -454,3 +454,24 @@ it('AIがOFFでも取得済みキャッシュのある行は実際の判定元�
  expect(table.querySelectorAll('tbody tr.pending-row,tbody tr.highlight-row,tbody tr.excluded-row')).toHaveLength(0);
  expect(document.querySelector('[data-yne-plus-hidden]')!.textContent).toContain('科学');
 });
+
+it('チップの一時停止・設定画面・メニューが連動し、非表示とハイライトをまとめて解除・再開する',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiInterests:['文化']});store.yne_plus_jev_local_v1={key:'test-key'};
+ await boot();await vi.advanceTimersByTimeAsync(1000);
+ for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.95}}})});
+ await vi.advanceTimersByTimeAsync(200);
+ expect(document.querySelector('[data-yne-plus-hidden]')).not.toBeNull();expect(document.querySelector('[data-yne-plus-highlight]')).not.toBeNull();
+ const overlay=document.getElementById('yne-plus-overlay')!,host=overlay.querySelector<HTMLElement>('[data-pause-control]')!,pause=host.shadowRoot!.querySelector('button')!;
+ const footer=root.querySelector<HTMLButtonElement>('.footer button')!,saved=structuredClone(store.yne_plus_settings_v2);
+ expect(host.hidden).toBe(true);overlay.dispatchEvent(new Event('mouseenter'));expect(host.hidden).toBe(false);
+ expect(pause.getAttribute('aria-label')).toBe('除外/ハイライトを一時停止');pause.click();
+ expect(document.querySelector('[data-yne-plus-hidden]')).toBeNull();expect(document.querySelector('[data-yne-plus-highlight]')).toBeNull();
+ expect(document.getElementById('yne-plus-badge')!.textContent).toBe('一時停止中');expect(pause.getAttribute('aria-pressed')).toBe('true');expect(pause.title).toBe('除外/ハイライトを再開');expect(footer.textContent).toBe('除外/ハイライトを再開');
+ const before=requests.length;await vi.advanceTimersByTimeAsync(1000);expect(requests).toHaveLength(before);
+ footer.click();expect(pause.getAttribute('aria-pressed')).toBe('false');expect(footer.textContent).toBe('除外/ハイライトを一時停止');
+ expect(document.querySelector('[data-yne-plus-hidden]')).not.toBeNull();expect(document.querySelector('[data-yne-plus-highlight]')).not.toBeNull();
+ menus['Y!News Filter Plus 除外/ハイライト 一時停止／再開']();expect(footer.textContent).toBe('除外/ハイライトを再開');expect(pause.getAttribute('aria-pressed')).toBe('true');
+ pause.click();expect(footer.textContent).toBe('除外/ハイライトを一時停止');expect(pause.getAttribute('aria-pressed')).toBe('false');
+ expect(store.yne_plus_settings_v2).toEqual(saved);
+ overlay.dispatchEvent(new Event('mouseleave'));expect(host.hidden).toBe(true);
+});
