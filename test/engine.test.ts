@@ -1,3 +1,4 @@
+import {initializeReportFilters} from '../src/report/filters';
 import {connectionIdentity} from '../src/shared/ai.js';
 import {afterEach,beforeEach,it,expect,vi} from 'vitest';
 import {defaults} from '../src/shared/settings.js';
@@ -559,4 +560,23 @@ it('チップから設定を開いて閉じた後、戻ったフォーカスで�
  await boot();await closeSettings();const overlay=document.getElementById('yne-plus-overlay')!,badge=document.getElementById('yne-plus-badge')!,pause=overlay.querySelector<HTMLElement>('[data-pause-control]')!,tags=Array.from(overlay.children).find(el=>el.shadowRoot?.querySelector('.list')) as HTMLElement;
  overlay.dispatchEvent(new Event('mouseenter'));badge.focus();expect(tags.style.display).toBe('block');badge.click();expect(tags.style.display).toBe('none');await closeSettings();badge.focus();await Promise.resolve();expect(tags.style.display).toBe('none');expect(pause.hidden).toBe(true);
  overlay.dispatchEvent(new Event('mouseenter'));expect(tags.style.display).toBe('block');document.body.dispatchEvent(new MouseEvent('pointermove',{bubbles:true,composed:true}));expect(tags.style.display).toBe('none');expect(pause.hidden).toBe(true);
+});
+
+
+it('判定表の記事タイトルを部分一致で絞り込み、判定種別・件数・空欄解除と連動する',async()=>{
+ document.querySelector('a')!.textContent='科学のAI速報';
+ const report=vi.fn();await boot({openReport:report});
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細を表で開く')!.click();await vi.advanceTimersByTimeAsync(1);
+ const doc=new DOMParser().parseFromString(report.mock.calls.at(-1)![0],'text/html');initializeReportFilters(doc);
+ const search=doc.querySelector<HTMLInputElement>('#report-text-filter')!;
+ expect(search.parentElement!.previousElementSibling!.tagName).toBe('P');expect(search.parentElement!.nextElementSibling!.className).toBe('filters');expect(search.parentElement!.textContent).toBe('記事タイトルで絞り込み：');
+ const hits=(kind:string)=>doc.querySelector(`[data-filter="${kind}"]`)!.parentElement!.querySelector('[data-filter-count]')!.textContent;
+ const query=(value:string)=>{search.value=value;search.dispatchEvent(new Event('input'));};
+ query(' ai ');expect(hits('keyword-excluded-row')).toBe('1');expect(hits('other-row')).toBe('0');expect(hits('excluded-row')).toBe('0');expect(doc.querySelector('#filter-count')!.textContent).toBe('1 / 2 行を表示');expect(doc.querySelector<HTMLTableRowElement>('.keyword-excluded-row')!.hidden).toBe(false);
+ doc.querySelector<HTMLInputElement>('[data-filter="keyword-excluded-row"]')!.click();expect(doc.querySelector('#filter-count')!.textContent).toBe('0 / 2 行を表示');expect(doc.querySelector<HTMLElement>('#filter-empty')!.hidden).toBe(false);expect(hits('keyword-excluded-row')).toBe('1');
+ doc.querySelector<HTMLButtonElement>('[data-filter-all="true"]')!.click();expect(doc.querySelector('#filter-count')!.textContent).toBe('1 / 2 行を表示');
+ query('文化');expect(hits('keyword-excluded-row')).toBe('0');expect(hits('other-row')).toBe('1');expect(doc.querySelector<HTMLTableRowElement>('.other-row')!.hidden).toBe(false);
+ query('通常表示');expect(doc.querySelector('#filter-count')!.textContent).toBe('0 / 2 行を表示');
+ query('<img>');expect(doc.querySelector('#filter-count')!.textContent).toBe('0 / 2 行を表示');expect(doc.querySelector('img')).toBeNull();
+ query('');expect(hits('keyword-excluded-row')).toBe('1');expect(hits('other-row')).toBe('1');expect(doc.querySelector('#filter-count')!.textContent).toBe('2 / 2 行を表示');expect(doc.querySelector<HTMLElement>('#filter-empty')!.hidden).toBe(true);
 });
