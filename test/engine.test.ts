@@ -475,3 +475,28 @@ it('チップの一時停止・設定画面・メニューが連動し、非表�
  expect(store.yne_plus_settings_v2).toEqual(saved);
  overlay.dispatchEvent(new Event('mouseleave'));expect(host.hidden).toBe(true);
 });
+
+it.each(['off','no-conditions','paused','filter-off'])('AI非使用の%sは通常表示に分類し、表・TSV・未判定件数を揃える',async mode=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:mode!=='off',aiConditions:mode==='no-conditions'?[]:['文化'],enabled:mode!=='filter-off'});store.yne_plus_jev_local_v1={key:'test-key'};
+ const report=vi.fn(),copy=vi.fn();await boot({openReport:report},{setClipboard:copy});
+ if(mode==='paused')menus['Y!News Filter Plus 除外/ハイライト 一時停止／再開']();
+ await vi.advanceTimersByTimeAsync(1);
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細を表で開く')!.click();await vi.advanceTimersByTimeAsync(1);
+ const table=new DOMParser().parseFromString(report.mock.calls.at(-1)![0],'text/html'),keyword=mode==='paused'||mode==='filter-off'?0:1;
+ expect(table.querySelectorAll('tbody tr')).toHaveLength(2);expect(table.querySelectorAll('tbody .keyword-excluded-row')).toHaveLength(keyword);expect(table.querySelectorAll('tbody .other-row')).toHaveLength(2-keyword);expect(table.querySelectorAll('tbody .pending-row')).toHaveLength(0);
+ const pending=Array.from(root.querySelectorAll('.usage-table tr')).find(row=>row.querySelector('th')?.textContent?.trim()==='未判定')!;expect(pending.querySelector('td')!.textContent).toBe('0 件');
+ expect(table.querySelector('tbody')!.textContent).not.toMatch(/未取得|未判定/);
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();await vi.advanceTimersByTimeAsync(1);
+ const tsv=copy.mock.calls.at(-1)![0];expect(tsv).not.toMatch(/未取得|未判定/);expect(tsv).toContain('対象外');
+ const label=mode==='off'?'AI判定OFF':mode==='no-conditions'?'条件未設定':mode==='paused'?'一時停止中':'フィルターOFF';expect(tsv).toContain('不使用（'+label+'）');expect(requests).toHaveLength(0);
+});
+it('AI条件が空の状態からハイライト条件だけを入力すると、通常表示から判定待ち・ハイライトへ切り替わる',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:[],aiInterests:[]});store.yne_plus_jev_local_v1={key:'test-key'};
+ const report=vi.fn();await boot({openReport:report});
+ const table=async()=>{Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細を表で開く')!.click();await vi.advanceTimersByTimeAsync(1);return new DOMParser().parseFromString(report.mock.calls.at(-1)![0],'text/html');};
+ expect((await table()).querySelectorAll('tbody .other-row')).toHaveLength(1);expect(requests).toHaveLength(0);
+ store.yne_plus_settings_v2.aiInterests=['文化'];window.dispatchEvent(new Event('focus'));await vi.advanceTimersByTimeAsync(500);
+ expect(requests.length).toBeGreaterThan(0);expect((await table()).querySelectorAll('tbody .pending-row')).toHaveLength(1);
+ for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({answers:{q0:{noul:.95}}})});await vi.advanceTimersByTimeAsync(200);
+ expect((await table()).querySelectorAll('tbody .highlight-row')).toHaveLength(1);expect(document.querySelector('[data-yne-plus-highlight]')).not.toBeNull();
+});
