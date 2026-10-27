@@ -554,3 +554,9 @@ it.each([['jev','jev-1.13.0','Jev'],['openai','gpt-6-luna','OpenAI Decisions'],[
   expect(release).toBeTruthy();release();await vi.advanceTimersByTimeAsync(1000);expect(requests.length).toBeGreaterThan(0);const during=await report();expect(during).toContain(label+' / '+model+'（判定結果なし）');expect(during).toContain('見出し通信中：応答を待っています。');
  }finally{if(previous)Object.defineProperty(navigator,'locks',previous);else Reflect.deleteProperty(navigator,'locks');}
 });
+
+it('チップから設定を開いて閉じた後、戻ったフォーカスでタグと一時停止ボタンを再表示しない',async()=>{
+ await boot();await closeSettings();const overlay=document.getElementById('yne-plus-overlay')!,badge=document.getElementById('yne-plus-badge')!,pause=overlay.querySelector<HTMLElement>('[data-pause-control]')!,tags=Array.from(overlay.children).find(el=>el.shadowRoot?.querySelector('.list')) as HTMLElement;
+ overlay.dispatchEvent(new Event('mouseenter'));badge.focus();expect(tags.style.display).toBe('block');badge.click();expect(tags.style.display).toBe('none');await closeSettings();badge.focus();await Promise.resolve();expect(tags.style.display).toBe('none');expect(pause.hidden).toBe(true);
+ overlay.dispatchEvent(new Event('mouseenter'));expect(tags.style.display).toBe('block');document.body.dispatchEvent(new MouseEvent('pointermove',{bubbles:true,composed:true}));expect(tags.style.display).toBe('none');expect(pause.hidden).toBe(true);
+});

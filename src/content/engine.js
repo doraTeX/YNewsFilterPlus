@@ -1,4 +1,5 @@
 import {createPauseControl} from './pause-control.js';
+import {createHoverMenu} from './hover-menu.js';
 import {highlightCSS} from '../shared/highlight.js';
 import {aiError,httpError,failureState} from '../shared/ai-errors.js';
 import {defaults,validate,normalize,parseRows,shouldHide,cleanRows} from '../shared/settings.js';
@@ -730,11 +731,8 @@ function renderHoverWords(){
   if(!words.length){const empty=document.createElement('span');empty.className='empty';empty.textContent='非表示中のワードはありません';hoverList.append(empty);}
 }
 const pauseControl=createPauseControl({toggle:togglePaused,pauseLabel:'除外/ハイライトを一時停止',resumeLabel:'除外/ハイライトを再開'});
-let pointerOverBadge=false;
-function toggleHover(){const visible=config.showPageChip&&(pointerOverBadge||overlay.contains(document.activeElement));hoverHost.style.display=visible?'block':'none';pauseControl.setVisible(visible);}
-overlay.addEventListener('mouseenter',()=>{pointerOverBadge=true;toggleHover();});
-overlay.addEventListener('mouseleave',()=>{pointerOverBadge=false;toggleHover();});
-overlay.addEventListener('focusin',toggleHover);overlay.addEventListener('focusout',()=>queueMicrotask(toggleHover));
+const hoverMenu=createHoverMenu({container:overlay,alive:connected,render:open=>{const visible=config.showPageChip&&open;hoverHost.style.display=visible?'block':'none';pauseControl.setVisible(visible);}});
+function toggleHover(){hoverMenu.refresh();}
 overlay.append(badge,progressHost,busyHost,errorHost,hoverHost,pauseControl.host);badge.addEventListener('click',openSettingsOrError);document.body.append(overlay);
 let toolbarCount=0,toolbarState=null;
 function syncToolbarBadge(){
@@ -858,6 +856,7 @@ window.addEventListener('popstate',()=>scan());
 window.addEventListener('hashchange',()=>scan());
 setInterval(()=>{if(location.href!==filterPageURL)scan();},500);
 function openSettingsOrError(){
+ hoverMenu.dismiss();
   const error=activeAIError();
   if(!error){editor();return;}
   if(errorDialog){errorDialog.focus();return;}
@@ -900,6 +899,7 @@ function openSettingsOrError(){
   document.body.append(dialog);dialog.showModal();close.focus();
 }
 function editor() {
+  hoverMenu.dismiss();
   if(panel) { panel.showModal(); return; }
   let editorBaseline=JSON.stringify(config);
   panel=document.createElement('dialog'); panel.id='yne-plus-ui';
