@@ -1,5 +1,5 @@
 const defaults = {version: 1, rows: [], enabled: true, showPageChip: true, ignoreCase: true,
-  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.8, aiHighlightColor: "#fff3bf", aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiDebug:false, aiShowProgress:true, aiConcurrency:5, aiRequestLimit:200};
+  normalization: 'loose', ignoreSeparators: false, legacyRate: false, aiConditions: [], aiInterests: [], aiThreshold: 0.8, aiHighlightColor: "#fff3bf", aiEnabled:false, aiBodyEnabled:false, aiBodyLow:0.3, aiDebug:false, aiShowProgress:false, aiConcurrency:5, aiRequestLimit:200};
 function validate(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.rows) ||
       value.rows.some(x => typeof x !== 'string')) throw Error('設定形式が不正です');
