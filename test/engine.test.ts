@@ -1,3 +1,4 @@
+import {connectionIdentity} from '../src/shared/ai.js';
 import {afterEach,beforeEach,it,expect,vi} from 'vitest';
 import {defaults} from '../src/shared/settings.js';
 import {startEngine} from '../src/content/engine.js';
@@ -12,6 +13,16 @@ beforeEach(()=>{
 });
 afterEach(()=>{for(const cleanup of engineCleanups.splice(0))cleanup();vi.clearAllTimers();vi.useRealTimers();vi.restoreAllMocks();});
 async function boot(overrides:Record<string,any>={},gmOverrides:Record<string,any>={}){let alive=true;engineCleanups.push(()=>{alive=false;});await startEngine({getValue:async(k:string,f:any)=>structuredClone(store[k]??f),setValue:async(k:string,v:any)=>{store[k]=structuredClone(v);},registerMenuCommand:async(n:string,f:()=>void)=>{menus[n]=f;},xmlHttpRequest:(r:any)=>requests.push(r),setClipboard:async()=>{},...gmOverrides},{isConnected:()=>alive,saveSettings:async(v:any)=>{if(saveFailure)throw Error('テスト保存失敗');store.yne_plus_settings_v2=structuredClone(v);},sync:async()=>{},syncStatus:async()=>({enabled:true,message:'同期済み',conflicts:[]}),setSyncEnabled:async()=>{},resolve:async()=>{},openReport:async()=>{},updateBadge:async()=>{},onSettingsChanged:()=>{},...overrides});menus['Y!News Filter Plus 設定']();await Promise.resolve();}
+it.each([false,true])('AI利用=%sの未判定記事を通常表示と未取得に分け、キーワード除外は保持する',async aiEnabled=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled,aiConditions:['文化']});
+ const report=vi.fn();await boot({openReport:report});
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細を表で開く')!.click();await vi.advanceTimersByTimeAsync(1);
+ const table=new DOMParser().parseFromString(report.mock.calls.at(-1)![0],'text/html');
+ expect(table.querySelectorAll('tbody tr.keyword-excluded-row')).toHaveLength(1);
+ expect(table.querySelectorAll('tbody tr.pending-row')).toHaveLength(aiEnabled?1:0);
+ expect(table.querySelectorAll('tbody tr.other-row')).toHaveLength(aiEnabled?0:1);
+ expect(table.querySelector('[data-filter="other-row"]')!.parentElement!.textContent).toContain(`通常表示 (${aiEnabled?0:1})`);
+});
 it('キーワード除外とChrome同期UIを持ち、Gist入力はない',async()=>{await boot();expect(document.querySelector('[data-yne-plus-hidden]')?.textContent).toContain('科学');expect(root.textContent).toContain('Chrome同期');expect(root.querySelector('[aria-label="Secret Gist"]')).toBeNull();expect(requests).toHaveLength(0);});
 it('設定JSONを読み込みJev設定も移行する',async()=>{
  await boot();const file=root.querySelector<HTMLInputElement>('input[type=file]')!;
@@ -339,7 +350,7 @@ it.each(['clef','clef-flash'])('利用AI %s を表とTSVに表示し、未判定
  const copy=vi.fn(),report=vi.fn();await boot({openReport:report},{setClipboard:copy});
  const click=async(label:string)=>{Array.from(root.querySelectorAll('button')).find(b=>b.textContent===label)!.click();await vi.advanceTimersByTimeAsync(1);};
  await click('判定詳細をTSVでコピー');
- expect(copy.mock.calls.at(-1)![0]).toContain(`Cloudflare Clef / ${model}（未判定）`);
+ expect(copy.mock.calls.at(-1)![0]).toContain('不使用（未取得）');expect(copy.mock.calls.at(-1)![0]).not.toContain(`Cloudflare Clef / ${model}（未判定）`);
  await vi.advanceTimersByTimeAsync(1000);
  expect(requests.length).toBeGreaterThan(0);
  for(const request of [...requests])request.onload({status:200,responseText:JSON.stringify({success:true,result:{answers:{q0:{noul:.97}}}})});
@@ -413,4 +424,25 @@ it.each(['jev','openai','clef'])('%sの認証失敗は全体を停止する',asy
  requests[0].onload({status:401,responseText:'{}'});await vi.advanceTimersByTimeAsync(1000);
  expect(requests).toHaveLength(1);expect(store.yne_plus_jev_local_v1.stopped).toBe(true);
  expect(root.querySelector<HTMLElement>('.jev-section')!.style.backgroundColor).not.toBe('');
+});
+
+it('AIを利用していない未取得行にプルダウンのAI名を表示しない',async()=>{
+ store.yne_plus_settings_v2.aiConditions=['文化'];store.yne_plus_settings_v2.aiEnabled=false;
+ store.yne_plus_jev_local_v1={provider:'clef',profiles:{clef:{key:'secret-token',accountId:'a'.repeat(32),model:'clef-flash'}}};
+ const copy=vi.fn();await boot({},{setClipboard:copy});Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();await vi.advanceTimersByTimeAsync(1);
+ const text=copy.mock.calls.at(-1)![0];expect(text).toContain('不使用（AI判定OFF）');expect(text).toContain('不使用（通常キーワード）');expect(text).not.toContain('Cloudflare Clef / clef-flash');expect(requests).toHaveLength(0);
+});
+it('実際に送信して応答待ちの行は送信したAIと判定結果なしを表示する',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:true,aiConditions:['文化']});store.yne_plus_jev_local_v1={provider:'clef',profiles:{clef:{key:'secret-token',accountId:'a'.repeat(32),model:'clef-flash'}}};
+ const copy=vi.fn();await boot({},{setClipboard:copy});await vi.advanceTimersByTimeAsync(1000);expect(requests.length).toBeGreaterThan(0);Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();await vi.advanceTimersByTimeAsync(1);expect(copy.mock.calls.at(-1)![0]).toContain('Cloudflare Clef / clef-flash（判定結果なし）');
+});
+it('AIがOFFでも取得済みキャッシュのある行は実際の判定元を表示する',async()=>{
+ Object.assign(store.yne_plus_settings_v2,{aiEnabled:false,aiConditions:['文化']});const local={provider:'clef',profiles:{clef:{key:'secret-token',accountId:'a'.repeat(32),model:'clef-flash'}}};store.yne_plus_jev_local_v1=local;
+ const key=JSON.stringify([5,connectionIdentity(local),'https://news.yahoo.co.jp/articles/example-two','文化の記事',['文化'],1]);store.yne_plus_jev_cache_v1={[key]:{time:Date.now(),scores:[.95]}};
+ const copy=vi.fn(),report=vi.fn();await boot({openReport:report},{setClipboard:copy});Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細をTSVでコピー')!.click();await vi.advanceTimersByTimeAsync(1);expect(copy.mock.calls.at(-1)![0]).toContain('Cloudflare Clef / clef-flash\t');expect(copy.mock.calls.at(-1)![0]).toContain('保存済みキャッシュ');expect(requests).toHaveLength(0);
+ Array.from(root.querySelectorAll('button')).find(b=>b.textContent==='判定詳細を表で開く')!.click();await vi.advanceTimersByTimeAsync(1);
+ const table=new DOMParser().parseFromString(report.mock.calls.at(-1)![0],'text/html');
+ expect(table.querySelectorAll('tbody tr.other-row')).toHaveLength(1);
+ expect(table.querySelectorAll('tbody tr.pending-row,tbody tr.highlight-row,tbody tr.excluded-row')).toHaveLength(0);
+ expect(document.querySelector('[data-yne-plus-hidden]')!.textContent).toContain('科学');
 });
