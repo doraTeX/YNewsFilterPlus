@@ -38,6 +38,17 @@ export const bridge={
  saveSettings:(value:unknown,reason:string,expected?:unknown)=>call('SAVE',{value,reason,expected}),
  sync:()=>call('SYNC'),syncStatus:()=>call('SYNC_STATUS'),setSyncEnabled:(enabled:boolean)=>call('SYNC_ENABLED',{enabled}),
  resolve:(doc:unknown)=>call('RESOLVE',{doc}),openReport:(html:string)=>call('REPORT',{html}),
- onSettingsChanged:(fn:()=>void)=>chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.yne_plus_settings_v2||changes.yne_plus_jev_local_v1))fn();})
+ onSettingsChanged:(fn:()=>void)=>{
+  if(!isConnected())return ()=>{};
+  const listener=(changes:Record<string,chrome.storage.StorageChange>,area:string)=>{if(isConnected()&&area==='local'&&(changes.yne_plus_settings_v2||changes.yne_plus_jev_local_v1))fn();};
+  try{
+   const changed=chrome.storage?.onChanged;
+   if(changed){changed.addListener(listener);return ()=>{try{changed.removeListener(listener);}catch{}};}
+  }catch(error){if(/Extension context invalidated/i.test(String(error)))invalidate();}
+  if(!isConnected())return ()=>{};
+  // 通知APIが利用できなくても初期化を続け、通常のGET経由で変更を確認する。
+  const timer=setInterval(()=>{if(!isConnected()){clearInterval(timer);return;}fn();},1500);
+  return ()=>clearInterval(timer);
+ }
 };
 chrome.runtime.onMessage.addListener((m,_sender,respond)=>{if(m.type==='OPEN_SETTINGS'){const open=menus.get('Y!News Filter Plus 設定');open?.();respond({opened:!!open});}});
