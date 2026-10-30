@@ -98,3 +98,29 @@ it('旧設定や旧同期データのaiDebugを無視し、以後の同期・書
  const raw=JSON.stringify({schema:1,clock:{old:1},settings:legacy});const decoded=await decodeRemote({'ynfp:old:0':raw,'ynfp:old:meta':{count:1,hash:await digest(raw)}});expect(decoded[0].settings.rows).toEqual(['保持する語']);expect(decoded[0].settings).not.toHaveProperty('aiDebug');
  const encoded=await encodeDoc({schema:1,clock:{old:1},settings:legacy as any},'old');expect(JSON.stringify(encoded)).not.toContain('aiDebug');
 });
+
+
+it('競合候補の並び順やローカル由来の時計を含むクラウド版を誤認せずタグ用の区分を返す',async()=>{
+ const store=new Store(),save=async(word:string)=>{await store.save(settings(word),'edit');};await save('base');await store.reconcile();const parent=(await store.state()).doc!;
+ await save('local');remote={...remote,...await encodeDoc(newDoc(settings('cloud'),'other',[parent]),'other')};await store.reconcile();
+ const status=await store.status(),sources=Object.fromEntries(status.conflicts.map((doc,i)=>[doc.settings.rows[0],status.conflictSources[i]]));
+ expect(sources).toEqual({local:'local',cloud:'cloud'});const chosen=status.conflicts.find(doc=>doc.settings.rows[0]==='cloud')!;await store.resolve(chosen);expect((await store.status()).conflictSources).toEqual([]);expect(local[SETTINGS].rows).toEqual(['cloud']);
+});
+it('競合表示後に編集しても表示中のローカル候補をクラウドへ変えない',async()=>{
+ const store=new Store(),save=async(word:string)=>{await store.save(settings(word),'edit');};await save('local');remote=await encodeDoc(newDoc(settings('cloud'),'other',[]),'other');await store.reconcile();
+ await save('edited');const status=await new Store().status();expect(status.conflictSources[status.conflicts.findIndex(doc=>doc.settings.rows[0]==='local')]).toBe('local');
+});
+it('ローカル候補がない複数の競合はすべてクラウドと表示する',async()=>{
+ remote={...await encodeDoc(newDoc(settings('a'),'device-a',[]),'device-a'),...await encodeDoc(newDoc(settings('b'),'device-b',[]),'device-b')};const store=new Store();await store.reconcile();expect((await store.status()).conflictSources).toEqual(['cloud','cloud']);
+});
+it('区分記録のない旧競合状態ではローカル版の時計を使う',async()=>{
+ const store=new Store(),save=async(word:string)=>{await store.save(settings(word),'edit');};await save('local');remote=await encodeDoc(newDoc(settings('cloud'),'other',[]),'other');await store.reconcile();
+ const state=await store.state();delete state.localConflictClock;await store.remember(state);const status=await store.status();expect(status.conflictSources[status.conflicts.findIndex(doc=>doc.settings.rows[0]==='local')]).toBe('local');
+});
+
+
+it('並び順だけの違いは許容しても、候補が更新されれば採用を拒否する',async()=>{
+ const store=new Store();await store.save(settings('local'),'edit');const cloud=newDoc(settings('cloud'),'other',[]);remote=await encodeDoc(cloud,'other');await store.reconcile();const old=(await store.status()).conflicts.find(doc=>doc.settings.rows[0]==='cloud')!;
+ remote={...remote,...await encodeDoc(newDoc(settings('new-cloud'),'other',[cloud]),'other')};
+ await expect(store.resolve(old)).rejects.toThrow('競合内容が変わりました');expect(local[SETTINGS].rows).toEqual(['local']);
+});

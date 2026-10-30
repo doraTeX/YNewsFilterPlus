@@ -1,3 +1,4 @@
+import {renderJSON} from '../shared/json-highlight.js';
 import {createPauseControl} from './pause-control.js';
 import {createHoverMenu} from './hover-menu.js';
 import {highlightCSS} from '../shared/highlight.js';
@@ -21,9 +22,14 @@ function addSyncUI({body,text,button,status}){
  const label=text('label','',section),toggle=document.createElement('input');toggle.type='checkbox';label.append(toggle,document.createTextNode('Chrome同期を有効にする'));
  const actions=text('div','',section,'buttons');
  actions.style.gap='14px';
- const list=text('div','',section);
+ const list=text('div','',section,'sync-conflicts');
  async function refresh(){const s=await bridge.syncStatus();toggle.checked=s.enabled;notice.textContent=s.message;list.replaceChildren();
-  for(const [i,doc] of (s.conflicts||[]).entries()){text('h3','競合した設定 '+(i+1),list);const pre=text('pre',JSON.stringify(doc.settings,null,2),list);pre.style.cssText='max-height:160px;overflow:auto;white-space:pre-wrap';button('この設定を採用',async()=>{await bridge.resolve(doc);await reloadSettings();await refresh();},list);}
+  for(const [i,doc] of (s.conflicts||[]).entries()){
+   const number=i+1,card=text('section','',list,'sync-conflict-card');card.setAttribute('aria-label','競合した設定 '+number);
+   const heading=text('h3','競合した設定 '+number,card,'sync-conflict-heading'),source=s.conflictSources?.[i];if(source==='local'||source==='cloud')text('span',source==='local'?'ローカル':'クラウド',heading,'sync-origin sync-origin-'+source);
+   const pre=text('pre','',card,'sync-conflict-code');pre.tabIndex=0;pre.setAttribute('aria-label','設定'+number+'の内容（JSON）');renderJSON(text('code','',pre),doc.settings);
+   const actions=text('div','',card,'sync-conflict-actions');button('設定'+number+'を採用',async()=>{await bridge.resolve(doc);await reloadSettings();await refresh();},actions);
+  }
  }
  toggle.onchange=async()=>{try{await bridge.setSyncEnabled(toggle.checked);await refresh();}catch(e){status.textContent=e.message;}};
  button('同期を確認',async()=>{await syncNow();await refresh();},actions);
@@ -899,6 +905,9 @@ function editor() {
   const style=document.createElement('style');style.textContent=`
     :host{font:15px/1.6 system-ui,sans-serif;color-scheme:light;text-align:left}
     *{box-sizing:border-box}[hidden]{display:none!important} .body{padding:24px} h2{font-size:22px;line-height:1.4;margin:0 0 8px;font-weight:700;color:#142b45} h3{font-size:15px;margin:0 0 10px}
+    .sync-conflict-code .json-key{color:#174ea6}.sync-conflict-code .json-string{color:#17633b}.sync-conflict-code .json-number{color:#9c3d10}.sync-conflict-code .json-boolean{color:#7035a3}.sync-conflict-code .json-null{color:#7035a3}.sync-conflict-code .json-punctuation{color:#52657a}
+    .sync-conflicts{display:grid;gap:20px;margin-top:16px}.sync-conflict-card{min-width:0;padding:16px;border:1px solid #c5d2e0;border-radius:10px;background:#fff}.sync-conflict-card .sync-conflict-heading{margin:0}.sync-conflict-code{max-height:180px;min-height:100px;margin:12px 0 0;padding:12px;border:1px solid #dbe3ec;border-radius:6px;background:#f3f6fa;color:#243b53;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;overflow:auto;white-space:pre;overflow-wrap:normal;tab-size:2}.sync-conflict-code code{font:inherit}.sync-conflict-actions{display:flex;justify-content:flex-end;margin-top:12px}
+    .sync-conflict-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.sync-origin{display:inline-block;padding:1px 8px;border:1px solid transparent;border-radius:4px;font:600 12px/1.6 system-ui;white-space:nowrap}.sync-origin-local{background:#dbeafe;border-color:#b6cef2;color:#1e4292}.sync-origin-cloud{background:#e8edf2;border-color:#cbd5df;color:#405168}
     p{margin:8px 0 14px} .hint{font-size:13px;color:#52657a} .section{margin-top:20px;padding-top:18px;border-top:1px solid #dbe3ec}
     textarea,input[type=text],input[type=password],input[type=url],select{font:15px/1.6 system-ui;color:#172b42;background:#fff;border:1.5px solid #9cadc0;border-radius:8px;padding:10px 12px;width:100%;}
     textarea{min-height:180px;height:210px;resize:vertical;display:block}label{display:flex;align-items:flex-start;gap:10px;margin:10px 0;cursor:pointer}

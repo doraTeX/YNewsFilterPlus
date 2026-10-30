@@ -580,3 +580,11 @@ it('判定表の記事タイトルを部分一致で絞り込み、判定種別�
  query('<img>');expect(doc.querySelector('#filter-count')!.textContent).toBe('0 / 2 行を表示');expect(doc.querySelector('img')).toBeNull();
  query('');expect(hits('keyword-excluded-row')).toBe('1');expect(hits('other-row')).toBe('1');expect(doc.querySelector('#filter-count')!.textContent).toBe('2 / 2 行を表示');expect(doc.querySelector<HTMLElement>('#filter-empty')!.hidden).toBe(true);
 });
+
+
+it('競合の各候補をローカル・クラウドのタグで示し、元の候補を採用できる',async()=>{
+ const docs=[{schema:1,clock:{cloud:1},settings:{...defaults,rows:['クラウドの語']}},{schema:1,clock:{local:1},settings:{...defaults,rows:['ローカルの語']}}],resolve=vi.fn();
+ await boot({syncStatus:async()=>({enabled:true,message:'競合しています',conflicts:docs,conflictSources:['cloud','local']}),resolve});for(let i=0;i<10;i++)await Promise.resolve();
+ expect(Array.from(root.querySelectorAll('.sync-origin')).map(tag=>tag.textContent)).toEqual(['クラウド','ローカル']);
+ const cards=Array.from(root.querySelectorAll('.sync-conflict-card'));expect(cards).toHaveLength(2);expect(cards[0].querySelector('code')!.textContent).toContain('クラウドの語');expect(cards[1].querySelector('code')!.textContent).toContain('ローカルの語');expect(cards[1].querySelector<HTMLPreElement>('pre')!.tabIndex).toBe(0);expect(cards.map(card=>card.querySelector('button')!.textContent)).toEqual(['設定1を採用','設定2を採用']);cards[1].querySelector<HTMLButtonElement>('button')!.click();await vi.advanceTimersByTimeAsync(1);expect(resolve).toHaveBeenCalledWith(docs[1]);
+});

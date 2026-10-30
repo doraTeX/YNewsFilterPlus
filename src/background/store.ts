@@ -1,7 +1,7 @@
 import {SETTINGS,HISTORY,parseDoc,newDoc,heads,encodeDoc,decodeRemote,assertQuota,type Doc,type Settings} from '../shared/sync';
 import {validate,defaults} from '../shared/settings.js';
 const STATE='ynfp_sync_state';
-type State={device:string;enabled:boolean;doc:Doc|null;pending:boolean;conflicts:Doc[];message:string};
+type State={device:string;enabled:boolean;doc:Doc|null;pending:boolean;conflicts:Doc[];localConflictClock?:Doc['clock']|null;message:string};
 export class Store{
  private chain=Promise.resolve();
  queue<T>(fn:()=>Promise<T>):Promise<T>{const result=this.chain.then(fn,fn);this.chain=result.then(()=>{},()=>{});return result;}
@@ -11,6 +11,11 @@ export class Store{
   if(s.doc)s.doc=parseDoc(JSON.stringify(s.doc));
   s.conflicts=s.conflicts.map(d=>parseDoc(JSON.stringify(d)));
   return s;
+ }
+ async status(){
+  const s=await this.state(),clock=s.localConflictClock===undefined?s.doc?.clock:s.localConflictClock;
+  const conflictSources=s.conflicts.map(doc=>clock&&Object.keys(clock).length===Object.keys(doc.clock).length&&Object.keys(clock).every(key=>clock[key]===doc.clock[key])?'local':'cloud');
+  return {enabled:s.enabled,message:s.message,conflicts:s.conflicts,conflictSources};
  }
  async remember(s:State){await chrome.storage.local.set({[STATE]:s});}
  async history(next:Settings,reason:string){
@@ -46,9 +51,9 @@ export class Store{
     s.pending=false;
    }
    const candidates=heads([...remote,...(s.doc?[s.doc]:[])]);
-   if(new Set(candidates.map(d=>JSON.stringify(d.settings))).size>1){s.conflicts=candidates;s.message='設定が競合しています。内容を比較して採用する設定を選んでください';}
+   if(new Set(candidates.map(d=>JSON.stringify(d.settings))).size>1){s.conflicts=candidates;s.localConflictClock=s.doc?{...s.doc.clock}:null;s.message='設定が競合しています。内容を比較して採用する設定を選んでください';}
    else if(candidates.length){
-    const chosen=candidates[0];s.conflicts=[];
+    const chosen=candidates[0];s.conflicts=[];s.localConflictClock=null;
     // 同内容の並行更新は時計を結合する。次の編集時に全てを継承。
     const clock:Record<string,number>={};for(const d of candidates)for(const[k,v]of Object.entries(d.clock))clock[k]=Math.max(clock[k]||0,v);
     s.doc={...chosen,clock};await this.history(chosen.settings,'chrome-sync');await chrome.storage.local.set({[SETTINGS]:chosen.settings});
@@ -61,9 +66,9 @@ export class Store{
  async resolve(value:unknown){
   const chosen=parseDoc(JSON.stringify(value)),s=await this.state();
   const remote=await decodeRemote(await chrome.storage.sync.get(null));const current=heads([...remote,...(s.doc?[s.doc]:[])]);
-  if(JSON.stringify(current)!==JSON.stringify(s.conflicts))throw Error('競合内容が変わりました。同期を確認して選び直してください');
+  if(JSON.stringify(current.map(doc=>JSON.stringify(doc)).sort())!==JSON.stringify(s.conflicts.map(doc=>JSON.stringify(doc)).sort()))throw Error('競合内容が変わりました。同期を確認して選び直してください');
   if(!current.some(d=>JSON.stringify(d)===JSON.stringify(chosen)))throw Error('選択された設定が見つかりません');
-  await this.history(chosen.settings,'conflict-resolution');s.doc=newDoc(chosen.settings,s.device,current);s.pending=true;s.conflicts=[];
+  await this.history(chosen.settings,'conflict-resolution');s.doc=newDoc(chosen.settings,s.device,current);s.pending=true;s.conflicts=[];s.localConflictClock=null;
   await chrome.storage.local.set({[SETTINGS]:chosen.settings,[STATE]:s});await this.reconcile();
  }
 }
