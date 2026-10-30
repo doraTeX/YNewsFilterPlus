@@ -1,6 +1,10 @@
+import {listenForSettingsOpen} from '../shared/settings-page-events';
 import {startEngine} from '../content/engine.js';
 import {GM,bridge} from '../shared/bridge';
-let open:()=>void=()=>{};
-const adapter={...GM,registerMenuCommand:async(name:string,fn:()=>void)=>{if(name.endsWith('設定'))open=fn;}};
-document.getElementById('open')!.onclick=()=>open();
+let open:(()=>void)|undefined,pendingOpen=false,disposed=false,stopOpen=()=>{};
+const requestOpen=()=>{if(open)open();else pendingOpen=true;};
+void listenForSettingsOpen(requestOpen).then(stop=>{if(disposed)stop();else stopOpen=stop;});
+window.addEventListener('pagehide',()=>{disposed=true;stopOpen();},{once:true});
+const adapter={...GM,registerMenuCommand:async(name:string,fn:()=>void)=>{if(name.endsWith('設定')){open=fn;if(pendingOpen){pendingOpen=false;open();}}}};
+document.getElementById('open')!.onclick=requestOpen;
 void startEngine(adapter,bridge).catch(e=>{document.body.append(document.createTextNode(String(e)));});

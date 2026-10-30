@@ -29,3 +29,10 @@ it('単独の拡張設定画面は指定タブを扱い、対象のない画面�
  await send({type:'DEBUG_SET',tabId:2,enabled:true},own);expect(session['ynfp_debug:2']).toBe(true);
  await expect(send({type:'DEBUG_SET',enabled:'true'})).rejects.toThrow('真偽値');
 });
+
+
+it('設定専用タブからツールバーを押すと同じページへ開く要求を送る',async()=>{
+ Object.assign(chrome.runtime,{sendMessage:vi.fn(async()=>({opened:true})),openOptionsPage:vi.fn(async()=>{})});Object.assign(chrome.tabs,{sendMessage:vi.fn(async()=>({opened:false}))});
+ const action=vi.mocked(chrome.action.onClicked.addListener).mock.calls[0][0];action({id:7,url:'chrome-extension://test-extension/src/dashboard/index.html'} as any);
+ await vi.waitFor(()=>expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({type:'OPEN_SETTINGS_PAGE',tabId:7}));expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();expect(chrome.runtime.openOptionsPage).not.toHaveBeenCalled();
+});

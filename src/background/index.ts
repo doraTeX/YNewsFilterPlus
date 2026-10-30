@@ -1,3 +1,4 @@
+import {openExistingSettingsPage} from '../shared/settings-page-events';
 import {Store} from './store';
 import {TabDebug} from './tab-debug';
 import {updateToolbarBadge} from './badge';
@@ -22,7 +23,7 @@ chrome.storage.onChanged.addListener((changes,area)=>{if(area==='sync'&&Object.k
 chrome.runtime.onStartup.addListener(()=>{void store.queue(()=>store.reconcile());});
 chrome.runtime.onInstalled.addListener(()=>{void chrome.alarms.create('sync-periodic',{periodInMinutes:5});});
 chrome.alarms.onAlarm.addListener(a=>{if(a.name==='sync-periodic')void store.queue(()=>store.reconcile());});
-chrome.action.onClicked.addListener(tab=>{if(tab.id!==undefined)void chrome.tabs.sendMessage(tab.id,{type:'OPEN_SETTINGS'}).then(r=>{if(!r?.opened)return chrome.runtime.openOptionsPage();}).catch(()=>chrome.runtime.openOptionsPage());else void chrome.runtime.openOptionsPage();});
+chrome.action.onClicked.addListener(tab=>{void (async()=>{if(await openExistingSettingsPage(tab))return;if(tab.id!==undefined){const reply=await chrome.tabs.sendMessage(tab.id,{type:'OPEN_SETTINGS'});if(reply?.opened)return;}await chrome.runtime.openOptionsPage();})().catch(()=>chrome.runtime.openOptionsPage());});
 function allowed(sender:chrome.runtime.MessageSender){
  if(sender.id!==chrome.runtime.id||!sender.url)return false;
  const u=new URL(sender.url);return u.origin===new URL(chrome.runtime.getURL('/')).origin||(u.protocol==='https:'&&YAHOO_HOSTS.includes(u.hostname));
@@ -43,7 +44,7 @@ async function handle(m:any,sender:chrome.runtime.MessageSender){
  case 'SET':if(!keys.has(m.key)||m.key===SETTINGS||m.key===HISTORY)throw Error('保存キーが不正です');await chrome.storage.local.set({[m.key]:m.value});return null;
  case 'SAVE':await store.queue(async()=>{if(m.reason==='migration'&&JSON.stringify(m.value)===JSON.stringify(defaults)&&!(await chrome.storage.local.get(SETTINGS))[SETTINGS])return;await store.save(m.value,m.reason,m.expected);});schedule();return null;
  case 'SYNC':await store.queue(()=>store.reconcile());return null;
- case 'SYNC_STATUS':{const s=await store.queue(()=>store.state());return {enabled:s.enabled,message:s.message,conflicts:s.conflicts};}
+ case 'SYNC_STATUS':return store.queue(()=>store.status());
  case 'SYNC_ENABLED':if(typeof m.enabled!=='boolean')throw Error('同期設定が不正です');await store.queue(async()=>{await store.setEnabled(m.enabled);await store.reconcile();});return null;
  case 'RESOLVE':await store.queue(()=>store.resolve(m.doc));return null;
  case 'NETWORK':return network(m);
