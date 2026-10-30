@@ -1,6 +1,6 @@
 {
   "name": "ynews-filter-plus",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,8 @@
     "test": "vitest run",
     "icons": "node scripts/generate-icons.mjs",
     "package": "npm run build && node scripts/package.mjs .build-check",
-    "build:extension": "tsc --noEmit && vite build"
+    "build:extension": "tsc --noEmit && vite build",
+    "preview": "vite --config vite.preview.config.ts"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0",
